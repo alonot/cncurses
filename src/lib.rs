@@ -8,85 +8,25 @@ TODO:
  3. On Scroll
 */
 
-use std::{any::Any, fmt::Debug, sync::Mutex};
-use dyn_clone::{clone, DynClone};
+use std::{any::Any, fmt::Debug, rc::Rc, sync::Mutex};
+use dyn_clone::clone;
+use interfaces::{Component, Fiber, Stateful};
+use nmodels::IView::IView;
 use once_cell::sync::Lazy;
 
-mod components;
+pub mod components;
 mod nmodels;
-
-trait Stateful: DynClone + Any + Send {
-    fn as_any(&self) -> &dyn Any;
-    fn eq(&self, other: &dyn Stateful) -> bool;
-}
-impl<T: Clone + Any + Send + PartialEq> Stateful for T {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn eq(&self, other: &dyn Stateful) -> bool {
-        other.as_any().downcast_ref::<T>().map_or(false, |other| self == other)
-    }
-}
-
-dyn_clone::clone_trait_object!(Stateful);
+pub mod interfaces;
 
 /**
- * Internal trait
+ * Checks and run IView, if Component can be downcasted to IView
  */
-
-trait IComponent {
-    fn get_children(&self) -> &Vec<Box<dyn IComponent>>;
-
-    /**
-     * Get important parameter of the screen and call render on its children
-     */
-    fn __render__(&self) -> i32 {
-
-        // loop over the children
-        self.get_children().iter().for_each(|child| {
-            // calls the render function of child
-            // gets the width covered by the child
-            let width = child.__render__();
-            
-            // TODO: fill left width with background color.
-        });
-
-        0
+fn convert_to_icomponent(v: Rc<Mutex<dyn Component>>) -> Option<Rc<Mutex<IView>>>
+{   
+    if let Some(base) = v.lock().unwrap().__base__() {
+        return Some(base)
     }
-}
-
-
-pub trait Component {
-    fn __call__(&self) -> Box<dyn Component> ;
-}
-
-struct Style<T, S> 
-where 
-    T : FnMut(),
-    S : FnMut()
-{
-    height:                 u32,
-    width:                  u32,
-    render:                 bool,
-    scroll:                 bool,
-    top:                    i32,
-    bottom:                 i32,
-    left:                   i32,
-    right:                  i32,
-    background_color:       i32,
-    z_index:                i32,
-    onclick: T ,   // should be a clousure
-    onscroll: S ,  // should be a clousure
-}
-
-
-/**
- * Hooks struct. Each Component will have its own object of this struct
- */
-struct Fiber {
-    current_idx : u32,
-    state: Vec<Box<dyn Stateful + 'static>>,
-    changed: bool
+    None
 }
 
 /**
@@ -98,11 +38,35 @@ fn initialize() {
 
 /**
  * Create tree, Keep recursing till we remove all non-base Components.
- * View and Buttons' children are expanded to get their base Components.
- * Base Components : View , Button, Text
+ * View and Buttons' children are expanded to get their IComponents.
  */
-fn create_tree() {
-    
+fn create_tree(mut node : Rc<Mutex<dyn Component>>) -> Rc<Mutex<IView>> {
+    // in recuursion
+
+    if let Some(base_lk) = convert_to_icomponent(node.clone()) {
+        let base = base_lk.lock().unwrap();
+        let content = &base.content;
+
+        match content {
+            interfaces::IViewContent::CHIDREN(iviews) => {
+                
+                // iterate over the children of node
+                base.children.iter().for_each(|child| {
+                    let new_iview = create_tree(child.clone()); 
+                    // assign them as child to the base_lk node 
+                });
+
+            },
+            interfaces::IViewContent::TEXT(_) => {
+                // DO Nothing
+            },
+        }
+        return base_lk.clone();
+    } else {
+        let new_node = node.lock().unwrap().__call__();
+        return create_tree(new_node);
+    }
+    todo!()
 }
 
 static GLOBAL_VEC: Lazy<Mutex<Vec<Fiber>>> = Lazy::new(|| Mutex::new(vec![]));
@@ -193,7 +157,7 @@ pub fn run(
  */
 #[cfg(test)]
 mod test {
-    use crate::{set_state, Fiber, CURR_FIBER, GLOBAL_VEC};
+    use crate::{set_state, Fiber, GLOBAL_VEC};
     fn clear() {
         let mut global_vec = GLOBAL_VEC.lock().unwrap();
         global_vec.iter_mut().for_each(|v| {
