@@ -1,0 +1,13 @@
+[package]
+name = "cncurses"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dyn-clone = "1.0.19"
+ncurses = "6.0.1"
+once_cell = "1.21.3"
+
+[profile.test]
+# Force tests to run sequentially
+test-threads = 1
