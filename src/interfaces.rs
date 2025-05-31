@@ -1,11 +1,11 @@
-use std::{any::Any, cell::RefCell, rc::Rc, sync::Mutex};
+use std::{any::Any, cell::RefCell, rc::Rc, sync::{Arc, Mutex}};
 
 use dyn_clone::DynClone;
 
-use crate::nmodels::IView::IView;
+use crate::{nmodels::IView::IView, CURR_FIBER};
 
 
-pub(crate) trait Stateful: DynClone + Any + Send {
+pub trait Stateful: DynClone + Any + Send {
     fn as_any(&self) -> &dyn Any;
     fn eq(&self, other: &dyn Stateful) -> bool;
 }
@@ -22,7 +22,7 @@ dyn_clone::clone_trait_object!(Stateful);
 
 #[derive(Clone)]
 pub(crate) enum IViewContent {
-    CHIDREN(Vec<IView>),
+    CHIDREN(Vec<Arc<Mutex<IView>>>),
     TEXT(String)
 }
 
@@ -32,11 +32,24 @@ impl Default for IViewContent {
     }
 }
 
-pub trait Component : Any {
-    fn __call__(&mut self) -> Rc<Mutex<dyn Component>>;
-    fn __base__(&self) -> Option<Rc<Mutex<IView>>> {
+pub trait Component : Any + Send {
+    fn __call__(&mut self) -> Arc<Mutex<dyn Component>>;
+    fn __base__(&self) -> Option<Arc<Mutex<IView>>> {
         None
     }
+    fn __key__(&self) -> Option<String> {
+        None
+    }
+}
+
+impl<T: Component> ComponentBuilder<T> for T {
+    fn build(self) -> Arc<Mutex<dyn Component>> {
+        Arc::new(Mutex::new(self))
+    }
+}
+
+pub trait ComponentBuilder<T> {
+    fn build(self) -> Arc<Mutex<dyn Component>>;
 }
 
 #[derive(Clone, Default)]
@@ -50,8 +63,8 @@ pub(crate) struct Style
     pub(crate) right:                  i32,
     pub(crate) background_color:       i32,
     pub(crate) z_index:                i32,
-    pub(crate) onclick:  Option<Rc<Box<dyn FnMut()>>> ,   // should be a clousure
-    pub(crate) onscroll: Option<Rc<Box<dyn FnMut()>>> ,  // should be a clousure
+    pub(crate) onclick:  Option<Arc<Mutex<dyn FnMut() + Send>>> ,   // should be a clousure
+    pub(crate) onscroll: Option<Arc<Mutex<dyn FnMut() + Send>>> ,  // should be a clousure
     pub(crate) render:                 bool,
     pub(crate) scroll:                 OVERFLOWBEHAVIOUR,
 }
@@ -131,7 +144,32 @@ pub enum STYLE {
  * Hooks struct. Each Component will have its own object of this struct
  */
 pub(crate) struct Fiber {
-    pub(crate) current_idx : u32,
-    pub(crate) state: Vec<Box<dyn Stateful + 'static>>,
-    pub(crate) changed: bool
+    pub(crate) key : String,
+    pub(crate) head: usize,
+    pub(crate) state: Vec<Box<dyn Stateful>>,
+    pub(crate) changed: bool,
+    pub(crate) component: Arc<Mutex<dyn Component>>, // for rendering and re-rendering
+    pub(crate) iview:     Option<Arc<Mutex<IView>>>, // Corresponding IView this Component yields
+    pub(crate) children:  Vec<Arc<Mutex<Fiber>>>
+}
+
+impl Fiber {
+    /**
+     * Adds the fiber to the global fiber list and returns the index
+     */
+    pub(crate) fn new(key: String, component: Arc<Mutex<dyn Component>>) -> Arc<Mutex<Fiber>> {
+        Arc::new(Mutex::new(Fiber {
+            key: key,
+            head: 0,
+            state: vec![],
+            changed: true,
+            component: component,
+            iview: None,
+            children: vec![],
+        }))
+    }
+
+    pub(crate) fn add_iview(&mut self, iview: Arc<Mutex<IView>>) {
+        self.iview = Some(iview);
+    }
 }
