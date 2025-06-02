@@ -1,8 +1,9 @@
-use std::{any::Any, cell::RefCell, rc::Rc, sync::{Arc, Mutex}};
+use std::{any::Any, cell::RefCell, clone, rc::Rc, sync::{Arc, Mutex}};
 
 use dyn_clone::DynClone;
+use ncurses::{newwin, MENU, PANEL, WINDOW};
 
-use crate::{nmodels::IView::IView, CURR_FIBER};
+use crate::{nmodels::IView::IView};
 
 
 pub trait Stateful: DynClone + Any + Send {
@@ -20,7 +21,6 @@ impl<T: Clone + Any + Send + PartialEq> Stateful for T {
 
 dyn_clone::clone_trait_object!(Stateful);
 
-#[derive(Clone)]
 pub(crate) enum IViewContent {
     CHIDREN(Vec<Arc<Mutex<IView>>>),
     TEXT(String)
@@ -29,6 +29,25 @@ pub(crate) enum IViewContent {
 impl Default for IViewContent {
     fn default() -> Self {
         IViewContent::TEXT("".to_string())
+    }
+}
+
+/**
+ * Never use this multi-threaded
+ */
+pub(crate) enum BASICSTRUCT {
+    WIN(WINDOW),
+    PANEL(PANEL),
+    MENU(MENU),
+}
+
+unsafe impl Send for BASICSTRUCT {}
+unsafe impl Sync for BASICSTRUCT {}
+
+
+impl Default for BASICSTRUCT {
+    fn default() -> Self {
+        BASICSTRUCT::WIN(newwin(0, 0, 0, 0))
     }
 }
 
@@ -52,7 +71,7 @@ pub trait ComponentBuilder<T> {
     fn build(self) -> Arc<Mutex<dyn Component>>;
 }
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub(crate) struct Style
 {
     pub(crate) height:                 i32,
@@ -157,12 +176,12 @@ impl Fiber {
     /**
      * Adds the fiber to the global fiber list and returns the index
      */
-    pub(crate) fn new(key: String, component: Arc<Mutex<dyn Component>>) -> Arc<Mutex<Fiber>> {
+    pub(crate) fn new(key: String, component: Arc<Mutex<dyn Component>>, changed: bool) -> Arc<Mutex<Fiber>> {
         Arc::new(Mutex::new(Fiber {
             key: key,
             head: 0,
             state: vec![],
-            changed: true,
+            changed: changed,
             component: component,
             iview: None,
             children: vec![],
