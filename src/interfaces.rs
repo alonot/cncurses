@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, clone, rc::Rc, sync::{Arc, Mutex}};
+use std::{any::Any, cell::RefCell, clone, mem::take, rc::Rc, sync::{Arc, Mutex}};
 
 use dyn_clone::DynClone;
 use ncurses::{newwin, MENU, PANEL, WINDOW};
@@ -32,13 +32,18 @@ impl Default for IViewContent {
     }
 }
 
+pub(crate) struct MENUSTRUCT {
+    menu: MENU,
+    win: WINDOW
+}
+
 /**
  * Never use this multi-threaded
  */
 pub(crate) enum BASICSTRUCT {
     WIN(WINDOW),
     PANEL(PANEL),
-    MENU(MENU),
+    MENU(MENUSTRUCT),
 }
 
 unsafe impl Send for BASICSTRUCT {}
@@ -56,7 +61,7 @@ pub trait Component : Any + Send {
     fn __base__(&self) -> Option<Arc<Mutex<IView>>> {
         None
     }
-    fn __key__(&self) -> Option<String> {
+    fn __key__(&self) -> Option<&String> {
         None
     }
 }
@@ -71,37 +76,59 @@ pub trait ComponentBuilder<T> {
     fn build(self) -> Arc<Mutex<dyn Component>>;
 }
 
+pub enum DIMEN {
+    INT(i32),
+    PERCENT(f32)
+}
+
+impl Default for DIMEN {
+    fn default() -> Self {
+        DIMEN::INT(0)
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct Style
 {
-    pub(crate) height:                 i32,
-    pub(crate) width:                  i32,
-    pub(crate) top:                    i32,
-    pub(crate) bottom:                 i32,
-    pub(crate) left:                   i32,
-    pub(crate) right:                  i32,
-    pub(crate) background_color:       i32,
-    pub(crate) z_index:                i32,
-    pub(crate) onclick:  Option<Arc<Mutex<dyn FnMut() + Send>>> ,   // should be a clousure
-    pub(crate) onscroll: Option<Arc<Mutex<dyn FnMut() + Send>>> ,  // should be a clousure
-    pub(crate) render:                 bool,
-    pub(crate) scroll:                 OVERFLOWBEHAVIOUR,
+    pub(crate) height:                  DIMEN,
+    pub(crate) width:                   DIMEN,
+    pub(crate) top:                     DIMEN,
+    pub(crate) left:                    DIMEN,
+    pub(crate) paddingleft:                DIMEN,
+    pub(crate) paddingtop:                DIMEN,
+    pub(crate) paddingright:                DIMEN,
+    pub(crate) paddingbottom:                DIMEN,
+
+    pub(crate) boxsizing:               BOXSIZING,
+    pub(crate) flex:                    u32,
+    pub(crate) flex_direction:          FLEXDIRECTION,
+    pub(crate) background_color:        i32,
+    pub(crate) z_index:                 i32,
+    pub(crate) onclick:                 Option<Arc<Mutex<dyn FnMut() + Send>>> ,   // should be a clousure
+    pub(crate) onscroll:                Option<Arc<Mutex<dyn FnMut() + Send>>> ,  // should be a clousure
+    pub(crate) render:                  bool,
+    pub(crate) scroll:                  OVERFLOWBEHAVIOUR,
 }
 
-const FIT_CONTENT:i32 = -1;
-const MAX_CONTENT:i32 = -2;
+pub const FIT_CONTENT:i32 = -1;
+pub const MAX_CONTENT:i32 = -2;
 
 impl Style
 {
     pub(crate) fn default() -> Style {
         Style { 
-            height: FIT_CONTENT,
-            width: FIT_CONTENT,
-            top: 0, 
-            bottom: 0, 
-            left: 0, 
-            right: 0, 
+            height: DIMEN::INT(FIT_CONTENT),
+            width: DIMEN::INT(FIT_CONTENT),
+            top: DIMEN::default(), 
+            left: DIMEN::default(), 
+            paddingleft: DIMEN::default(),
+            paddingtop: DIMEN::default(),
+            paddingright: DIMEN::default(),
+            paddingbottom: DIMEN::default(),
+            flex_direction: FLEXDIRECTION::default(), 
+            boxsizing: BOXSIZING::default(),
             background_color: 0, 
+            flex: 0,
             z_index: 0, 
             onclick: None, 
             onscroll: None, 
@@ -109,24 +136,33 @@ impl Style
             scroll: OVERFLOWBEHAVIOUR::HIDDEN
         }
     }
+    pub(crate) fn set_style(&mut self, v: STYLE) {
+        match v {
+                STYLE::HIEGHT(h) => self.height = h,
+                STYLE::WIDTH(w) => self.width = w,
+                STYLE::TOP(t) => self.top = t,
+                STYLE::LEFT(t) => self.left = t,
+                STYLE::PADDINGLEFT(p) => self.paddingleft = p,
+                STYLE::PADDINGTOP(p) => self.paddingtop = p,
+                STYLE::PADDINGRIGHT(p) => self.paddingright = p,
+                STYLE::PADDINGBOTTOM(p) => self.paddingbottom = p,
+                STYLE::FLEX(f) => self.flex = f,
+                STYLE::FLEXDIRECTION(f) => self.flex_direction = f,
+                STYLE::BOXSIZING(f) => self.boxsizing = f,
+                STYLE::BACKGROUNDCOLOR(bg) => self.background_color = bg,
+                STYLE::ZINDEX(z) => self.z_index = z,
+                STYLE::OVERFLOW(overflow_behaviour) => self.scroll = overflow_behaviour,
+            }
+
+    }
+
     pub(crate) fn from_style(styles: Vec<STYLE>) -> Style {
 
         let mut style_obj = Style::default();
 
-        styles.iter().for_each(|v| {
-
-            match v {
-                STYLE::HIEGHT(h) => style_obj.height = *h,
-                STYLE::WIDTH(w) => style_obj.width = *w,
-                STYLE::TOP(t) => style_obj.top = *t,
-                STYLE::LEFT(l) => style_obj.left = *l,
-                STYLE::BOTTOM(b) => style_obj.bottom = *b,
-                STYLE::RIGHT(r) => style_obj.right = *r,
-                STYLE::BACKGROUNDCOLOR(bg) => style_obj.background_color = *bg,
-                STYLE::ZINDEX(z) => style_obj.z_index = *z,
-                STYLE::OVERFLOW(overflow_behaviour) => style_obj.scroll = *overflow_behaviour,
-            }
-
+        styles.into_iter().for_each(|v| {
+            style_obj.set_style(v);
+            
         });
 
         style_obj
@@ -146,13 +182,49 @@ impl Default for OVERFLOWBEHAVIOUR {
     }
 }
 
+pub enum FLEXDIRECTION {
+    VERTICAL,
+    HORIZONTAL
+}
+
+impl Default for FLEXDIRECTION {
+    fn default() -> Self {
+        FLEXDIRECTION::VERTICAL
+    }
+}
+
+
+pub enum BOXSIZING {
+    /** The padding is taken within the content dimensions. If height is set to FITCONTENT then boxsizing will be forced to border box for height. Similarly for width too. */
+    BORDERBOX,
+    /** The padding is outside the content dimensions */
+    CONTENTBOX
+}
+
+impl Default for BOXSIZING {
+    fn default() -> Self {
+        BOXSIZING::CONTENTBOX
+    }
+}
+
+
+
+
 pub enum STYLE {
-    HIEGHT(i32),
-    WIDTH(i32),
-    TOP(i32),
-    LEFT(i32),
-    BOTTOM(i32),
-    RIGHT(i32),
+    HIEGHT(DIMEN),
+    WIDTH(DIMEN),
+    /** relative to current position */
+    TOP(DIMEN),
+    LEFT(DIMEN),
+    PADDINGLEFT(DIMEN),
+    PADDINGTOP(DIMEN),
+    PADDINGRIGHT(DIMEN),
+    PADDINGBOTTOM(DIMEN),
+    BOXSIZING(BOXSIZING),
+    /** 0 means unset. Actual Height and width dimensions with INT gets priority over flex. if they are set with PERCEN then flex gets priority. */
+    FLEX(u32),
+    /**Default Vertical */
+    FLEXDIRECTION(FLEXDIRECTION),
     BACKGROUNDCOLOR(i32),
     ZINDEX(i32),
     OVERFLOW(OVERFLOWBEHAVIOUR),

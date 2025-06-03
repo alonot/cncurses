@@ -6,7 +6,8 @@ use crate::{interfaces::{STYLE}, nmodels::IView::IView, Component};
  Basic Text which can hold an string
 */
 pub struct Text{
-    base_component:         Arc<Mutex<IView>>
+    base_component:         Arc<Mutex<IView>>,
+    key:                    Option<String>
 }
 
 impl Component for Text {
@@ -20,8 +21,17 @@ impl Component for Text {
 
 impl Text {
     pub fn new(text: String, style: Vec<STYLE>) -> Text {
+        let iview = IView::from_text(text, style);
         Text {
-            base_component: IView::from_text(text, style).build()
+            key: None,
+            base_component: iview.build()
+        }
+    }
+    pub fn new_key(key: Option<String>,text: String, style: Vec<STYLE>) -> Text {
+        let iview = IView::from_text(text, style);
+        Text {
+            key: key,
+            base_component: iview.build()
         }
     }
     pub fn onclick<T: FnMut() + Send + 'static>(&mut self, onclick: T) -> &mut Self {

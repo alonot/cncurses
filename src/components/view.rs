@@ -7,7 +7,8 @@ Basic Block of screen which can contain multiple child
 */
 #[derive(Default, Clone)]
 pub struct View{
-    base_component:                    Arc<Mutex<IView>>
+    base_component:                    Arc<Mutex<IView>>,
+    key:                               Option<String>
 }
 
 impl Component for View {
@@ -17,12 +18,22 @@ impl Component for View {
     fn __base__(&self) -> Option<Arc<Mutex<IView>>> {
         Some(self.base_component.clone())
     }
+    fn __key__(&self) -> Option<&String> {
+        self.key.as_ref()
+    }
 }
 
 
 impl View {
     pub fn new(children: Vec<Arc<Mutex<dyn Component>>>, style: Vec<STYLE>) -> View {
         View {
+            key: None,
+            base_component: IView::with_style_vec(style, IViewContent::CHIDREN(vec![]), children).build()
+        }
+    }
+    pub fn new_key(key: Option<String>,children: Vec<Arc<Mutex<dyn Component>>>, style: Vec<STYLE>) -> View {
+        View {
+            key: key,
             base_component: IView::with_style_vec(style, IViewContent::CHIDREN(vec![]), children).build()
         }
     }

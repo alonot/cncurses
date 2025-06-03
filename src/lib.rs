@@ -10,12 +10,17 @@ TODO:
 
 use dyn_clone::clone;
 use interfaces::{Component, Fiber, IViewContent, Stateful};
+use ncurses::{
+    cbreak, curs_set, endwin, getmaxyx, initscr, keypad, mmask_t, mouseinterval, mousemask, nodelay, noecho, printw, refresh, start_color, stdscr, use_default_colors, wrefresh, ALL_MOUSE_EVENTS
+};
 use nmodels::IView::IView;
 use std::{
     any::TypeId,
     fmt::Debug,
     sync::{Arc, Mutex},
 };
+
+use crate::interfaces::BASICSTRUCT;
 
 pub mod components;
 pub mod interfaces;
@@ -40,13 +45,25 @@ fn get_typeid(node: Arc<Mutex<dyn Component>>) -> TypeId {
 }
 
 fn get_key(v: &Arc<Mutex<dyn Component>>) -> String {
-    v.lock().unwrap().__key__().map_or(format!(""), |f| f)
+    v.lock().unwrap().__key__().map_or(format!(""), |f| f.clone())
 }
 
 /**
  * Initalize the window
  */
-fn initialize() {}
+fn initialize() {
+    initscr();
+    noecho();
+    keypad(stdscr(), true);
+    curs_set(ncurses::CURSOR_VISIBILITY::CURSOR_INVISIBLE);
+    start_color();
+    cbreak();
+    nodelay(stdscr(), true); // make getch non-blocking
+    use_default_colors();
+    mousemask(ALL_MOUSE_EVENTS as mmask_t, None);
+    mouseinterval(0);
+    refresh();
+}
 
 fn debug_tree(node: Arc<Mutex<IView>>, tabs: i32) {
     let iview = node.lock().unwrap();
@@ -131,7 +148,7 @@ fn create_tree(
 fn create_render_tree(node: Arc<Mutex<dyn Component>>) -> Arc<Mutex<IView>> {
     let parent = IView::new().build();
 
-    let fiber = create_tree(node, parent.clone(), true);
+    let fiber = create_tree(node, parent.clone(), false);
 
     let Some(iview) = fiber.lock().unwrap().iview.clone() else {
         panic!("CREATERENDERTREEE: no iview in given Componenet")
@@ -260,7 +277,6 @@ fn re_assign_fiber(fiber_lk_opt: Option<Arc<Mutex<Fiber>>>) -> Option<Arc<Mutex<
  * returns the previous fiber
  */
 fn assign_fiber(fiber_lk_opt: Option<Arc<Mutex<Fiber>>>) -> Option<Arc<Mutex<Fiber>>> {
-
     let prev_fiber = {
         let curr_fiber = CURR_FIBER.lock().unwrap();
         let fib = curr_fiber.clone();
@@ -341,7 +357,7 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>) -> bool {
         let prev_fiber = re_assign_fiber(Some(fiber_lk.clone()));
 
         let new_node = component.lock().unwrap().__call__();
-        
+
         assign_fiber(prev_fiber);
 
         let cfiber_lk = fiber_lk.clone();
@@ -356,6 +372,7 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>) -> bool {
             let child = child_lk.lock().unwrap();
             let prev_key = &child.key;
 
+            // true    
             new_key != prev_key
                 || get_typeid(child.component.clone()) != get_typeid(new_node.clone())
         };
@@ -368,7 +385,6 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>) -> bool {
             let Some(parent) = iview.lock().unwrap().parent.clone() else {
                 panic!("CREATETREE: no Parent for given IView")
             };
-
 
             // create new tree
             let child_fiber_lk = create_tree(new_node, parent, false); // somewhere inside the IView would get filled by its child_lk
@@ -420,6 +436,7 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>) -> bool {
         // this time convert_to_component may return different tree because some child has changed
 
         if let Some(base_lk) = convert_to_icomponent(&component) {
+            base_lk.lock().unwrap().style.render = true;
             update_child(fiber_lk.clone(), base_lk.clone());
 
             // update with new Iview
@@ -466,6 +483,29 @@ fn diff_n_update(root: Arc<Mutex<IView>>) -> bool {
     changed
 }
 
+/**
+ * Init the IView tree's structure
+ */
+fn tree_refresh(root: Arc<Mutex<IView>>) -> (i32, i32, bool) {
+    let x = &mut 0;
+    let y = &mut 0;
+    getmaxyx(stdscr(), y, x);
+    let res = root.lock().unwrap().__init__(*y, *x);
+    if res.2 {
+        let render_box = root.lock().unwrap().__render__();
+        let Some(basic_struct) = &root.lock().unwrap().basic_struct else {
+            panic!("NO window at root");
+        };
+        let BASICSTRUCT::WIN(win) = basic_struct else {
+            panic!("NO window at root");
+        };
+        wrefresh(*win);
+        refresh();
+        // put the render_box to the screen
+        println!("{:?}", render_box);
+    }
+    res
+}
 
 static CURR_FIBER: Mutex<Option<Arc<Mutex<Fiber>>>> = Mutex::new(None);
 
@@ -535,21 +575,23 @@ pub fn run(app: impl Component) {
     let root = create_render_tree(node);
 
     // debug_tree(root.clone(), 0);
+    initialize();
 
     loop {
-
         // if change, get the tree from the app.
         // diff the tree to get the changed components
         let changed = diff_n_update(root.clone());
 
         // if changes, render the changed portion
         if changed {
-            let iview = root.lock().unwrap().__render__();
+            let res = tree_refresh(root.clone());
+            // let iview = root.lock().unwrap().__render__();
         }
 
         // handle click and scroll
-
     }
+
+    endwin();
 }
 
 /**
@@ -558,16 +600,12 @@ pub fn run(app: impl Component) {
  */
 #[cfg(test)]
 mod test {
-    use std::{
-        sync::{Arc, Mutex},
-    };
+    use std::sync::{Arc, Mutex};
+
+    use ncurses::{endwin, getch};
 
     use crate::{
-        CURR_FIBER,
-        components::{text::Text, view::View},
-        create_render_tree, debug_fiber_tree, debug_tree, diff_n_update,
-        interfaces::{Component, ComponentBuilder},
-        set_state,
+        components::{text::Text, view::View}, create_render_tree, debug_fiber_tree, debug_tree, diff_n_update, initialize, interfaces::{Component, ComponentBuilder, BOXSIZING, DIMEN, FLEXDIRECTION, OVERFLOWBEHAVIOUR, STYLE}, set_state, tree_refresh, CURR_FIBER
     };
 
     struct DemoApp1 {
@@ -576,7 +614,6 @@ mod test {
 
     impl Component for DemoApp1 {
         fn __call__(&mut self) -> Arc<Mutex<dyn Component>> {
-
             let (p1, setp1) = set_state::<i32>(self.val);
 
             setp1(10);
@@ -609,13 +646,13 @@ mod test {
                         Text::new("Shiv Shambo".to_string(), vec![]).build(),
                         Text::new("Shiv Shambo".to_string(), vec![]).build(),
                     ],
-                    vec![],
+                    vec![STYLE::FLEXDIRECTION(FLEXDIRECTION::HORIZONTAL)],
                 )
                 .build()
             } else {
-                Text::new("Shiv Shambo".to_string(), vec![]).build()
-                // View::new(vec![
-                // ], vec![]).build()
+                View::new_key(Some("P".to_string()),vec![
+                    Text::new("Shiv Shambo".to_string(), vec![]).build()
+                ], vec![]).build()
             }
         }
     }
@@ -633,9 +670,17 @@ mod test {
                         val: self.v1.clone(),
                     }
                     .build(),
-                    Text::new("Hello".to_string(), vec![]).build(),
+                    Text::new("Hello".to_string(), vec![STYLE::HIEGHT(DIMEN::INT(20))]).build(),
                 ],
-                vec![],
+                vec![
+                    STYLE::WIDTH(DIMEN::INT(1)),
+                    STYLE::PADDINGLEFT(DIMEN::INT(10)),
+                    STYLE::PADDINGTOP(DIMEN::INT(10)),
+                    STYLE::PADDINGBOTTOM(DIMEN::INT(10)),
+                    STYLE::PADDINGRIGHT(DIMEN::INT(10)),
+                    STYLE::OVERFLOW(OVERFLOWBEHAVIOUR::VISIBLE),
+                    STYLE::BOXSIZING(BOXSIZING::BORDERBOX),
+                ],
             )
             .build()
         }
@@ -731,14 +776,20 @@ mod test {
             debug_fiber_tree(fiber.clone(), 0);
         }
 
+        initialize();
+
+        let res = tree_refresh(root.clone());
+
+        while getch() != 'q' as i32 {}
+        endwin();
         {
             let Some(fiber) = CURR_FIBER.lock().unwrap().clone() else {
                 panic!("No fiber")
             };
 
-            println!("{}", diff_n_update(root.clone()));
+            println!("LL {}", diff_n_update(root.clone()));
 
-            root.lock().unwrap().__render__();
+            // root.lock().unwrap().__render__();
         }
 
         let Some(fiber) = CURR_FIBER.lock().unwrap().clone() else {
@@ -751,6 +802,18 @@ mod test {
             panic!("No IView")
         };
 
-        debug_tree(root, 0);
+        debug_tree(root.clone(), 0);
+
+        initialize();
+
+        let res = tree_refresh(root.clone());
+
+        while getch() != 'q' as i32 {}
+        endwin();
+
+        // debug_tree(root.clone(), 0);
+
+        // let res = tree_refresh(root.clone());
+        // println!("{} {} {}", res.0, res.1, res.2);
     }
 }

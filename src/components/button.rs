@@ -8,12 +8,14 @@ use super::view::View;
 */
 pub struct Button{
     child: Arc<Mutex<dyn Component>>,
-    style: Style
+    style: Style,
+    key: Option<String>
 }
 
 impl Component for Button {
     fn __call__(&mut self) -> Arc<Mutex<dyn Component>>  {
-        let mut binding = View::new(
+        let mut binding = View::new_key(
+            self.key.clone(),
             vec![self.child.clone()], 
             vec![]
         );
@@ -28,10 +30,11 @@ impl Component for Button {
 
 
 impl Button {
-    pub fn new<T: FnMut() + Send +'static>(child: Arc<Mutex<dyn Component>>, style: Vec<STYLE>,  onclick: T) -> Button {
+    pub fn new<T: FnMut() + Send +'static>(key: Option<String>,child: Arc<Mutex<dyn Component>>, style: Vec<STYLE>,  onclick: T) -> Button {
         let style_obj = Style::from_style(style);
         
         let  mut btn = Button {
+            key: key,
             child: child,
             style: style_obj
         };
