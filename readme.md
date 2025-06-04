@@ -34,8 +34,14 @@ NOTE: Dimension -> Height/Width
     When padding is already known. Everything is good because we can calculate the padding and substract it from parent's dimension to calculate the content-dimension.
     However, if padding depends on parent's dimension, and parent dimension depends on child's (`FITCONTENT`) then, it is sure that child's will not depend on parent's because of circular dependency.Hence, in given senario, child's dimension does not depend on the parent's no matter whatever we provide in the child's __init__() . Hence we can get the parent's dimension and then calculate the padding afterwards.
 
+#### Event-handlers:
+Each event handler is FnMut(&mut EVENT), the bool value decide whether the event must be passed on to subsequent layers(bubbling or capturing) or not.
+
+Keyboard events supports bubbling up only. 
+Mouse Events supports both bubbling and capture.
+
 ### Next:
 
-1. OnClick
+0. Focus
 2. Scroll and onscroll
 3. Improving the user interface

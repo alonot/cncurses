@@ -1,6 +1,6 @@
-use std::sync::{Arc, Mutex};
+use std::{mem::take, sync::{Arc, Mutex}};
 
-use crate::{interfaces::{STYLE}, nmodels::IView::IView, Component};
+use crate::{interfaces::{EVENT, STYLE}, nmodels::IView::IView, Component};
 
 /* Text 
  Basic Text which can hold an string
@@ -34,12 +34,20 @@ impl Text {
             base_component: iview.build()
         }
     }
-    pub fn onclick<T: FnMut() + Send + 'static>(&mut self, onclick: T) -> &mut Self {
-        self.base_component.lock().unwrap().style.onclick = Some(Arc::new(Mutex::new(onclick)));
+    pub fn onclick<T: FnMut(&mut EVENT) + Send + 'static>(self, onclick: T, capture:bool) -> Self {
+        if capture {
+            self.base_component.lock().unwrap().style.onclick_capture = Some(Arc::new(Mutex::new(onclick)));
+        } else {
+            self.base_component.lock().unwrap().style.onclick_bubble = Some(Arc::new(Mutex::new(onclick)));
+        }
         self
     }
-    pub fn onscroll<S: FnMut() + Send + 'static>(&mut self, onscroll: S) -> &mut Self {
-        self.base_component.lock().unwrap().style.onscroll = Some(Arc::new(Mutex::new(onscroll)));
+    pub fn onscroll<S: FnMut(&mut EVENT) + Send + 'static>(self, onscroll: S, capture:bool) -> Self {
+        if capture {
+            self.base_component.lock().unwrap().style.onscroll_capture = Some(Arc::new(Mutex::new(onscroll)));
+        } else {   
+            self.base_component.lock().unwrap().style.onscroll_bubble = Some(Arc::new(Mutex::new(onscroll)));
+        }
         self
     }
 }

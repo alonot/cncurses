@@ -17,10 +17,10 @@ fn main() {
 
     let mut t = 10;
 
-    let v = View::new(vec![p], vec![]).onclick(|| {}).onscroll(
-        move || {
+    let v = View::new(vec![p], vec![]).onclick(|e| {}, true).onscroll(
+        move |e| {
             t +=1;
-        }
+        }, false
     );
 
     run(P{i:10});
