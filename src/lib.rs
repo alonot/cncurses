@@ -79,16 +79,15 @@ fn debug_tree(node: Arc<Mutex<IView>>, tabs: i32) {
     print!("|-");
     match &iview.content {
         interfaces::IViewContent::CHIDREN(items) => {
-            println!("IView({}, {:p})", iview.style.render, &*iview);
+            println!("IView_{}({}, {:p})", iview.id, iview.style.render, &*iview);
             items.iter().for_each(|child| {
                 debug_tree(child.clone(), tabs + 1);
             });
         }
         interfaces::IViewContent::TEXT(txt) => {
             println!(
-                "IView({}, {txt}, {:p})",
-                iview.style.render,
-                &*iview
+                "IView_{}({}, {txt}, {:p})",
+                iview.id, iview.style.render, &*iview
             );
         }
     }
@@ -465,6 +464,8 @@ fn tree_refresh(root: Arc<Mutex<IView>>) -> (i32, i32, bool) {
     DOCUMENT.lock().unwrap().clear_tab_order();
     let res = root.lock().unwrap().__init__(*y, *x);
     if res.2 {
+        DOCUMENT.lock().unwrap().create_tab_order();
+
         let _ = root.lock().unwrap().__render__();
         let Some(basic_struct) = &root.lock().unwrap().basic_struct else {
             panic!("NO window at root");
@@ -475,6 +476,7 @@ fn tree_refresh(root: Arc<Mutex<IView>>) -> (i32, i32, bool) {
         wrefresh(*win);
         refresh();
     }
+    DOCUMENT.lock().unwrap().changed = false;
     res
 }
 
@@ -509,13 +511,13 @@ fn handle_keyboard_event(ch: i32) -> bool {
         handle_event(iview, &mut event);
     }
     // handle regular functionality if default is on
-    
+
     if event.default {
         match ch {
             KEY_BTAB => {
                 let mut document = DOCUMENT.lock().unwrap();
                 document.advance_tab();
-            },
+            }
             val if val == 'q' as i32 => {
                 return true;
             }
@@ -550,7 +552,7 @@ fn handle_events(root: Arc<Mutex<IView>>) -> bool {
                 event.mevent = Some(mevent);
                 event.clientx = mevent.x;
                 event.clienty = mevent.y;
-                
+
                 root.lock().unwrap().__handle_mouse_event__(&mut event);
             }
         }
@@ -570,6 +572,8 @@ static DOCUMENT: Mutex<Document> = Mutex::new(Document {
     curr_fiber: None,
     tabindex: 0,
     taborder: vec![],
+    unique_id: 0,
+    changed: true,
 });
 
 /**
@@ -751,17 +755,18 @@ mod test {
                         val: self.v1.clone(),
                     }
                     .build(),
-                    Text::new("Hello".to_string(), vec![STYLE::HIEGHT(DIMEN::INT(20))]).onclick(|e| {
+                    Text::new("Hello asdnaksjdnakjsc ajs cjsd cjasdcjsadjcaskjdcnjasdncjasbdjchasbdjcasjdcnaksjdnclkasncalskjdnckalsnclksandckjansdlkcnaskjdcnaksndcasjkndsjsdajkdnjjsvabhjcnjcnjsdjlsdajxcnxcnkxcmnxcmnxcmnxcmnxcmnxcmnxcm,xcm,xcmnxcm,xcm,xcm,xcmnxcaskbkdjscbasdjcbjasbcjcbkasjbdcajcbashcjbaksjcbsajdchbasdj".to_string(), vec![STYLE::WIDTH(DIMEN::INT(10))]).onclick(|e| {
                         println!("I was Called");
                     }, true).build(),
                 ],
                 vec![
-                    // STYLE::WIDTH(DIMEN::INT(1)),
+                    STYLE::TABORDER(0),
+                    STYLE::HIEGHT(DIMEN::INT(6)),
                     STYLE::PADDINGLEFT(DIMEN::INT(10)),
                     STYLE::PADDINGTOP(DIMEN::INT(10)),
                     STYLE::PADDINGBOTTOM(DIMEN::INT(10)),
                     STYLE::PADDINGRIGHT(DIMEN::INT(10)),
-                    // STYLE::OVERFLOW(OVERFLOWBEHAVIOUR::VISIBLE),
+                    STYLE::OVERFLOW(OVERFLOWBEHAVIOUR::SCROLL),
                     // STYLE::BOXSIZING(BOXSIZING::BORDERBOX),
                 ],
             )
@@ -861,36 +866,18 @@ mod test {
 
         initialize();
 
-        let res = tree_refresh(root.clone());
-
-        while getch() != 'q' as i32 {}
-        endwin();
-        {
-            let Some(fiber) = DOCUMENT.lock().unwrap().curr_fiber.clone() else {
-                panic!("No fiber")
-            };
-
-            println!("LL {}", diff_n_update(root.clone()));
-
-        }
-
-        let Some(fiber) = DOCUMENT.lock().unwrap().curr_fiber.clone() else {
-            panic!("No fiber")
-        };
-
-        debug_fiber_tree(fiber.clone(), 0);
-
-        let Some(iview) = fiber.lock().unwrap().iview.clone() else {
-            panic!("No IView")
-        };
-
-        debug_tree(root.clone(), 0);
-
-        initialize();
-
-        let res = tree_refresh(root.clone());
-
         loop {
+            // if change, get the tree from the app.
+            // diff the tree to get the changed components
+            let mut changed = diff_n_update(root.clone());
+
+            // if changes, render the changed portion
+            changed |= DOCUMENT.lock().unwrap().changed;
+            if changed {
+                let _ = tree_refresh(root.clone());
+            }
+
+            // handle click and scroll
             if handle_events(root.clone()) {
                 break;
             }

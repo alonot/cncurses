@@ -3,14 +3,24 @@
  */
 
 use std::{
-    cmp::{max, min}, i32::MAX, ops::Deref, sync::{Arc, Mutex}
+    cmp::{max, min},
+    i32::MAX,
+    ops::Deref,
+    sync::{Arc, Mutex},
 };
 
-use ncurses::{WINDOW, box_, copywin, mvwprintw, newpad, newwin, wbkgd, wrefresh};
+use ncurses::{
+    BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, WINDOW, box_, copywin,
+    delwin, endwin, mvwprintw, newpad, newwin, wbkgd, wrefresh,
+};
 
-use crate::{interfaces::{
-    Component, IViewContent, Style, BASICSTRUCT, BOXSIZING, DIMEN, EVENT, FIT_CONTENT, FLEXDIRECTION, OVERFLOWBEHAVIOUR, STYLE
-}, DOCUMENT};
+use crate::{
+    DOCUMENT,
+    interfaces::{
+        BASICSTRUCT, BOXSIZING, Component, DIMEN, EVENT, FIT_CONTENT, FLEXDIRECTION, IViewContent,
+        OVERFLOWBEHAVIOUR, STYLE, Style,
+    },
+};
 
 #[derive(Debug)]
 pub(crate) struct RenderBox {
@@ -43,7 +53,7 @@ pub(crate) struct IView {
     pub(crate) children: Vec<Arc<Mutex<dyn Component>>>, // will be neglected if TViewContent::TEXT
     pub(crate) parent: Option<Arc<Mutex<IView>>>,
     pub(crate) basic_struct: Option<BASICSTRUCT>,
-    pub(crate) taborder: i32,
+    pub(crate) id: i32,
     height: i32,
     width: i32,
     /** Only the dimen of content(without padding, border) */
@@ -58,14 +68,22 @@ pub(crate) struct IView {
     marginy: i32,
     scrollx: i32,
     scrolly: i32,
-    /**  Used to check scroll limit */
+    /**  Used to check scroll limit. Has Extra Padding values added during init */
     children_height: i32,
     /**  Used to check scroll limit */
     children_width: i32,
 }
 
 impl IView {
+    /**Uses DOCUMENT lock() */
     pub(crate) fn new() -> IView {
+        let id = {
+            let mut document = DOCUMENT.lock().unwrap();
+            let id = document.unique_id;
+            document.unique_id += 1;
+            id
+        };
+
         IView {
             content: IViewContent::TEXT("".to_string()),
             children: vec![],
@@ -76,7 +94,6 @@ impl IView {
             width: FIT_CONTENT,
             content_height: 0,
             content_width: 0,
-            taborder: 0,
             scrollx: 0,
             scrolly: 0,
             paddingleft: 0,
@@ -87,83 +104,33 @@ impl IView {
             marginy: 0,
             children_height: 0,
             children_width: 0,
+            id: id,
         }
     }
+    /**Uses DOCUMENT lock() */
     pub(crate) fn new_with_styles(styles: Vec<STYLE>) -> IView {
-        IView {
-            content: IViewContent::TEXT("".to_string()),
-            children: vec![],
-            style: Style::from_style(styles),
-            parent: None,
-            basic_struct: None,
-            height: 0,
-            width: 0,
-            content_height: 0,
-            content_width: 0,
-            taborder: 0,
-            scrollx: 0,
-            scrolly: 0,
-            paddingleft: 0,
-            paddingtop: 0,
-            paddingright: 0,
-            paddingbottom: 0,
-            marginx: 0,
-            marginy: 0,
-            children_height: 0,
-            children_width: 0,
-        }
+        let mut iview = IView::new();
+        iview.style = Style::from_style(styles);
+        iview
     }
+    /**Uses DOCUMENT lock() */
     pub(crate) fn from_text(text: String, styles: Vec<STYLE>) -> IView {
-        IView {
-            content: IViewContent::TEXT(text),
-            style: Style::from_style(styles),
-            children: vec![],
-            parent: None,
-            basic_struct: None,
-            height: 0,
-            width: 0,
-            content_height: 0,
-            content_width: 0,
-            taborder: 0,
-            scrollx: 0,
-            scrolly: 0,
-            paddingleft: 0,
-            paddingtop: 0,
-            paddingright: 0,
-            paddingbottom: 0,
-            marginx: 0,
-            marginy: 0,
-            children_height: 0,
-            children_width: 0,
-        }
+        let mut iview = IView::new();
+        iview.style = Style::from_style(styles);
+        iview.content = IViewContent::TEXT(text);
+        iview
     }
+    /**Uses DOCUMENT lock() */
     pub(crate) fn with_style_vec(
         styles: Vec<STYLE>,
         content: IViewContent,
         children: Vec<Arc<Mutex<dyn Component>>>,
     ) -> IView {
-        IView {
-            content: content,
-            style: Style::from_style(styles),
-            children: children,
-            parent: None,
-            basic_struct: None,
-            height: 0,
-            width: 0,
-            content_height: 0,
-            content_width: 0,
-            taborder: 0,
-            scrollx: 0,
-            scrolly: 0,
-            paddingleft: 0,
-            paddingtop: 0,
-            paddingright: 0,
-            paddingbottom: 0,
-            marginx: 0,
-            marginy: 0,
-            children_height: 0,
-            children_width: 0,
-        }
+        let mut iview = IView::new();
+        iview.style = Style::from_style(styles);
+        iview.content = content;
+        iview.children = children;
+        iview
     }
 
     pub(crate) fn set_style(&mut self, style: STYLE) -> &mut Self {
@@ -230,14 +197,18 @@ impl IView {
                 let direction = &self.style.flex_direction;
 
                 (cheight, cwidth, changed) = items.iter().fold((0, 0, false), |prev, child_lk| {
-                    let mut child: std::sync::MutexGuard<'_, IView> = child_lk.lock().unwrap();
+                    let taborder = {
+                        let child = child_lk.lock().unwrap();
+                        child.style.taborder
+                    };
 
                     // add this to the tab order
-                    if child.style.taborder > 0 {
+                    if taborder >= 0 {
                         let mut document = DOCUMENT.lock().unwrap();
                         document.insert_tab_element(child_lk.clone());
                     }
 
+                    let mut child = child_lk.lock().unwrap();
                     // If Child has flex , but no dimension then set the respective dimension as percentage
                     IView::evaluate_flex(&mut child, total_flex, direction);
 
@@ -347,6 +318,45 @@ impl IView {
         }
     }
 
+    fn destroy_basic_struct(&mut self) {
+        if let Some(prev_win) = &self.basic_struct {
+            match prev_win {
+                BASICSTRUCT::WIN(win) => {
+                    delwin(*win);
+                }
+                BASICSTRUCT::PANEL(panel) => {
+                    todo!()
+                }
+                BASICSTRUCT::MENU(menustruct) => {
+                    todo!()
+                }
+            }
+        };
+    }
+
+    fn init_basic_struct(&mut self) {
+        let extrax = self.paddingleft + self.paddingright;
+        let extray = self.paddingbottom + self.paddingtop;
+
+        match &self.content {
+            IViewContent::CHIDREN(_) => {
+                // println!("{} {} {} {}", self.content_height + extray, self.content_width + extrax, self.height, self.width);
+                self.basic_struct = Some(BASICSTRUCT::WIN(newwin(
+                    self.content_height + extray,
+                    self.content_width + extrax,
+                    0,
+                    0,
+                )));
+            }
+            IViewContent::TEXT(txt) => {
+                // create a pad
+                // println!("{txt} {} {} {} {}", self.content_height + extray, self.content_width + extrax, self.height, self.width);
+                let win = newpad(self.content_height + extray, self.content_width + extrax);
+                self.basic_struct = Some(BASICSTRUCT::WIN(win));
+            }
+        }
+    }
+
     /**
      * Allocates actual ncurses window/panel/menu/form
      * input:
@@ -430,6 +440,7 @@ impl IView {
         let (cheight, cwidth, changed) = self.calculate_child_dimensions(changed);
         // content dimensions would have been updated if depend on child
 
+        // println!("{} {}", self.content_height, self.content_width);
         if changed {
             // if previously padding was not calculated (due to content box), then it will be calculated now
             self.fill_box_infos();
@@ -454,27 +465,12 @@ impl IView {
             // update the height and width with padding
             self.height += extray;
             self.width += extrax;
-            // println!("{} {} {} {}: {} {} {} {}", self.paddingbottom, self.paddingleft , self.paddingright, self.paddingtop, extrax, extray, self.content_height, self.content_width);
+            // println!(
+            //     "{} {} : {} {}",
+            //     self.height, self.width, self.content_height, self.content_width
+            // );
 
-            match &self.content {
-                IViewContent::CHIDREN(_) => {
-                    // println!("{} {} {} {}", self.content_height + extray, self.content_width + extrax, self.height, self.width);
-                    self.basic_struct = Some(BASICSTRUCT::WIN(newwin(
-                        self.content_height + extray,
-                        self.content_width + extrax,
-                        0,
-                        0,
-                    )));
-                }
-                IViewContent::TEXT(txt) => {
-                    // create a pad
-                    // println!("{txt} {} {} {} {}", self.content_height + extray, self.content_width + extrax, self.height, self.width);
-                    let win = newpad(self.content_height + extray, self.content_width + extrax);
-                    self.basic_struct = Some(BASICSTRUCT::WIN(win));
-                }
-            }
-
-            self.children_height = cheight + extrax;
+            self.children_height = cheight + extray;
             self.children_width = cwidth + extrax;
         }
 
@@ -513,7 +509,6 @@ impl IView {
      *      its window (which should be rendered by the parent)
      */
     pub(crate) fn __render__(&mut self) -> (RenderBox, WINDOW) {
-        let style = &self.style;
         let extra = (
             self.paddingbottom + self.paddingtop,
             self.paddingleft + self.paddingright,
@@ -521,9 +516,11 @@ impl IView {
 
         let mut topleft = (self.paddingtop, self.paddingleft); // virtual screen
         let mut last_cursor = (
-            self.content_height + self.paddingtop - 1,
-            self.content_width + self.paddingleft - 1,
-        ); // do not consider the padding at bottom and at right
+            self.content_height + extra.1 - 1,
+            self.content_width + extra.0 - 1,
+        );
+        // do not consider the padding along the direction
+
         last_cursor.0 = last_cursor.0.max(0);
         last_cursor.1 = last_cursor.1.max(0);
         /*   __ .  .  .
@@ -532,8 +529,9 @@ impl IView {
                  | cursor ->|
                  |          |
               */
+        self.init_basic_struct();
 
-        let direction = &style.flex_direction;
+        let direction = &self.style.flex_direction;
 
         let Some(basicstr) = &self.basic_struct else {
             panic!("NO WINDOW found for View")
@@ -546,6 +544,11 @@ impl IView {
             bottomrighty: 0,
         };
         let win: &WINDOW;
+
+        // println!(
+        //     "{:p} {:?} {:?} {} {}",
+        //     self, last_cursor, topleft, self.scrollx, self.scrolly
+        // );
 
         match &self.content {
             IViewContent::CHIDREN(icomponents) => {
@@ -563,13 +566,17 @@ impl IView {
                     box_(*win, 0, 0);
                 }
 
+                let scroll_end_cursor = (
+                    self.scrolly + self.content_height + extra.1,
+                    self.scrollx + self.content_width + extra.0,
+                );
+
                 // loop over the children
                 icomponents.iter().for_each(|child_lk| {
                     // calls the render function of child if it's bounds are within the view port of this window
                     // gets the width covered by the child
-                    if topleft.0 > self.scrolly + self.content_height
-                        || topleft.1 > self.scrollx + self.content_width
-                    {
+                    // println!("SEND {:p} {:?} {:?} {}", self, topleft, scroll_end_cursor ,self.content_height);
+                    if topleft.0 >= scroll_end_cursor.0 || topleft.1 >= scroll_end_cursor.1 {
                         return;
                     }
 
@@ -596,6 +603,10 @@ impl IView {
                     // update the render box
                     let curr_box =
                         self.corrected_render_box(&render_box, &prevtopleft, &last_cursor);
+                    // println!(
+                    //     "{:p}{:?} {:?} {:?}",
+                    //     self, render_box, curr_box, prevtopleft
+                    // );
 
                     // need to consider the flex direction
                     // place the child at current top and left position
@@ -610,6 +621,8 @@ impl IView {
                         curr_box.bottomrightx,
                         0,
                     );
+
+                    child_lk.lock().unwrap().destroy_basic_struct();
 
                     curr_render_box.update(&curr_box);
                 });
@@ -639,9 +652,9 @@ impl IView {
         }
 
         // apply the border;
-        if style.render {
-            curr_render_box.toplefty = self.scrolly;
-            curr_render_box.topleftx = self.scrollx;
+        if self.style.render {
+            curr_render_box.toplefty = 0;
+            curr_render_box.topleftx = 0;
             curr_render_box.bottomrighty = (self.content_height + extra.0 - 1).max(0);
             curr_render_box.bottomrightx = (self.content_width + extra.1 - 1).max(0);
         }
@@ -655,11 +668,14 @@ impl IView {
      * handles the given mouse event. Do not pass a non mouse event
      * returns whether to propogate bubbling or not
      *          true: do not bubble
+     * Uses DOCUMENT lock()
      */
-    pub(crate) fn __handle_mouse_event__(&self, event: &mut EVENT) {
-        let Some(mevent) = &event.mevent else {
-            panic!("Invalid Handler")
-        };
+    pub(crate) fn __handle_mouse_event__(&mut self, event: &mut EVENT) {
+        {
+            let Some(_) = &event.mevent else {
+                panic!("Invalid Handler")
+            };
+        }
 
         // handle capture
         self.style.handle_event(event, true);
@@ -672,6 +688,41 @@ impl IView {
         let mut clientx = event.clientx - self.paddingleft;
         let mut clienty = event.clienty - self.paddingtop;
         let direction = &self.style.flex_direction;
+
+        if event.default {
+            let Some(mevent) = &event.mevent else {
+                panic!("Invalid Handler")
+            };
+            if mevent.bstate == BUTTON1_PRESSED as u32 {
+                // left mouse clicked
+                if self.style.taborder >= 0 {
+                    // make this the active element
+                    DOCUMENT.lock().unwrap().focus(self.id);
+                }
+            } else if mevent.bstate != BUTTON2_PRESSED as u32
+                && matches!(self.style.scroll, OVERFLOWBEHAVIOUR::SCROLL)
+            {
+                if mevent.bstate == BUTTON4_PRESSED as u32 {
+                    // scroll down
+                    if self.scrolly > 0 {
+                        self.scrolly -= 1;
+                        self.style.render = true;
+                    }
+                } else if mevent.bstate == BUTTON5_PRESSED as u32 {
+                    // scroll up
+                    if self.scrolly
+                        < self.children_height
+                            - self.content_height
+                            - self.paddingbottom
+                            - self.paddingtop
+                    {
+                        self.scrolly += 1;
+                        self.style.render = true;
+                    }
+                }
+            }
+        }
+
         if clientx >= 0 && clienty >= 0 {
             // else clicked on padding area
 
@@ -679,7 +730,7 @@ impl IView {
             match &self.content {
                 IViewContent::CHIDREN(items) => {
                     for child_lk in items {
-                        let child = child_lk.lock().unwrap();
+                        let mut child = child_lk.lock().unwrap();
                         let cheight = child.height;
                         let cwidth = child.width;
                         match direction {
@@ -697,7 +748,7 @@ impl IView {
                                 if clientx - cwidth < 0 {
                                     event.clientx = clientx;
                                     event.clienty = clienty;
-                                    
+
                                     child.__handle_mouse_event__(event);
                                     break;
                                 }
@@ -712,6 +763,10 @@ impl IView {
             }
         }
 
+        if self.style.render {
+            DOCUMENT.lock().unwrap().changed = true;
+        }
+
         // now call child's event_handler
         event.clientx = actualx;
         event.clienty = actualy;
@@ -720,6 +775,5 @@ impl IView {
         if event.propogate {
             self.style.handle_event(event, false);
         }
-
     }
 }

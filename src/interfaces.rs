@@ -9,7 +9,8 @@ use std::{
 
 use dyn_clone::DynClone;
 use ncurses::{
-    endwin, newwin, BUTTON1_PRESSED, BUTTON3_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, MENU, MEVENT, PANEL, WINDOW
+    BUTTON1_PRESSED, BUTTON3_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, MENU, MEVENT, PANEL,
+    WINDOW, endwin, newwin,
 };
 
 use crate::nmodels::IView::IView;
@@ -97,7 +98,6 @@ impl Default for DIMEN {
     }
 }
 
-
 #[derive(Debug)]
 pub struct EVENT {
     pub(crate) mevent: Option<MEVENT>,
@@ -110,13 +110,20 @@ pub struct EVENT {
 
 impl EVENT {
     pub(crate) fn new(ch: i32) -> EVENT {
-        EVENT { mevent: None, key: 0, clientx: 0, clienty: 0, propogate: true, default: true }
+        EVENT {
+            mevent: None,
+            key: 0,
+            clientx: 0,
+            clienty: 0,
+            propogate: true,
+            default: true,
+        }
     }
 
     pub fn get_mevent(&mut self) -> &Option<MEVENT> {
         &self.mevent
     }
-    
+
     pub fn get_key(&mut self) -> i32 {
         self.key
     }
@@ -130,14 +137,11 @@ impl EVENT {
     pub fn stop_propogation(&mut self) {
         self.propogate = false;
     }
-    
+
     pub fn prevent_default(&mut self) {
         self.default = false;
     }
 }
-
-
-
 
 #[derive(Default)]
 pub(crate) struct Style {
@@ -249,7 +253,6 @@ impl Style {
                 }
             }
         } else if !capture { // TODO
-            
         }
 
         if let Some(fnc) = fnc_opt {
@@ -354,10 +357,19 @@ impl Fiber {
     }
 }
 
+
+pub(crate) struct TabElement {
+    id: i32,
+    iview: Arc<Mutex<IView>>
+}
+
 pub(crate) struct Document {
     pub(crate) curr_fiber: Option<Arc<Mutex<Fiber>>>,
-    pub(crate) taborder: Vec<Arc<Mutex<IView>>>,
+    pub(crate) taborder: Vec<TabElement>,
     pub(crate) tabindex: usize,
+    pub(crate) unique_id: i32,
+    /** turned true if some changed happen to any IView. (This may occur even though there was no state change in Fiber. Eg of such events. Scroll, Focus) */
+    pub(crate) changed:bool
 }
 
 impl Document {
@@ -370,14 +382,15 @@ impl Document {
      * resets the head to 0
      * returns the previous fiber
      */
-    pub(crate) fn re_assign_fiber(&mut self, fiber_lk_opt: Option<Arc<Mutex<Fiber>>>) -> Option<Arc<Mutex<Fiber>>> {
+    pub(crate) fn re_assign_fiber(
+        &mut self,
+        fiber_lk_opt: Option<Arc<Mutex<Fiber>>>,
+    ) -> Option<Arc<Mutex<Fiber>>> {
         if let Some(fiber_lk) = &fiber_lk_opt {
             fiber_lk.lock().unwrap().head = 0;
         }
 
-        let prev_fiber = {
-            self.curr_fiber.clone()
-        };
+        let prev_fiber = { self.curr_fiber.clone() };
 
         self.curr_fiber = fiber_lk_opt;
 
@@ -401,10 +414,16 @@ impl Document {
         // None
     }
 
+    /** Uses element.lock() */
     pub(crate) fn insert_tab_element(&mut self, element: Arc<Mutex<IView>>) {
-        self.taborder.push(element);
-        println!("INSERT");
-        self.taborder.sort_by_key(|c| c.lock().unwrap().taborder);
+        let id = element.lock().unwrap().id;
+        self.taborder.push(TabElement { id: id, iview: element });  
+    }
+
+    /**creates the tab order using the inserted elements so far */
+    pub(crate) fn create_tab_order(&mut self) {
+        self.taborder
+            .sort_by_key(|c| c.iview.lock().unwrap().style.taborder);
     }
 
     pub(crate) fn clear_tab_order(&mut self) {
@@ -419,6 +438,16 @@ impl Document {
         }
     }
 
+    pub(crate) fn focus(&mut self, element_id: i32) {
+        if let Some(idx) = self
+            .taborder
+            .iter()
+            .position(|ielement| ielement.id == element_id)
+        {
+            self.tabindex = idx;
+        };
+    }
+
     /**
      * May Overflow
      */
@@ -426,6 +455,6 @@ impl Document {
         if self.taborder.is_empty() {
             return None;
         }
-        Some(self.taborder[self.tabindex].clone())
+        Some(self.taborder[self.tabindex].iview.clone())
     }
 }

@@ -40,6 +40,10 @@ Each event handler is FnMut(&mut EVENT), the bool value decide whether the event
 Keyboard events supports bubbling up only. 
 Mouse Events supports both bubbling and capture.
 
+#### Rendering:
+
+child will create its basic struct and parent will destroy it after copying
+
 ### Next:
 
 0. Focus

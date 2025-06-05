@@ -33,7 +33,7 @@ impl Button {
     pub fn new<T: FnMut(&mut EVENT) + Send +'static>(key: Option<String>,child: Arc<Mutex<dyn Component>>, style: Vec<STYLE>,  onclick: T) -> Button {
         let style_obj = Style::from_style(style);
         
-        let  mut btn = Button {
+        let btn = Button {
             key: key,
             child: child,
             style: style_obj
