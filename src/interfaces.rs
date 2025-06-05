@@ -87,6 +87,7 @@ pub trait ComponentBuilder<T> {
     fn build(self) -> Arc<Mutex<dyn Component>>;
 }
 
+#[derive(Debug)]
 pub enum DIMEN {
     INT(i32),
     PERCENT(f32),
@@ -96,6 +97,29 @@ impl Default for DIMEN {
     fn default() -> Self {
         DIMEN::INT(0)
     }
+}
+
+impl DIMEN {
+    fn verify(mut self) -> Self{
+        match self {
+            DIMEN::INT(i) => {
+                if i < FIT_CONTENT {
+                    endwin();
+                    panic!("Invalid Dimens: Dimens:INT() >= -1");
+                }
+            },
+            DIMEN::PERCENT(mut p) => {
+                if p > 100.0 || p < 0.0 {
+                    endwin();
+                    panic!("Invalid Dimens: 0 <= Dimen:PERCEN() <= 100");
+                }
+                p = p / 100.0;
+                self = DIMEN::PERCENT(p);
+            },
+        }
+        self
+    }
+
 }
 
 #[derive(Debug)]
@@ -199,14 +223,14 @@ impl Style {
     pub(crate) fn set_style(&mut self, v: STYLE) {
         match v {
             STYLE::TABORDER(t) => self.taborder = t,
-            STYLE::HIEGHT(h) => self.height = h,
-            STYLE::WIDTH(w) => self.width = w,
-            STYLE::TOP(t) => self.top = t,
-            STYLE::LEFT(t) => self.left = t,
-            STYLE::PADDINGLEFT(p) => self.paddingleft = p,
-            STYLE::PADDINGTOP(p) => self.paddingtop = p,
-            STYLE::PADDINGRIGHT(p) => self.paddingright = p,
-            STYLE::PADDINGBOTTOM(p) => self.paddingbottom = p,
+            STYLE::HIEGHT(h) =>self.height = h.verify(),
+            STYLE::WIDTH(w) => self.width = w.verify(),
+            STYLE::TOP(t) => self.top = t.verify(),
+            STYLE::LEFT(t) => self.left = t.verify(),
+            STYLE::PADDINGLEFT(p) => self.paddingleft = p.verify(),
+            STYLE::PADDINGTOP(p) => self.paddingtop = p.verify(),
+            STYLE::PADDINGRIGHT(p) => self.paddingright = p.verify(),
+            STYLE::PADDINGBOTTOM(p) => self.paddingbottom = p.verify(),
             STYLE::FLEX(f) => self.flex = f,
             STYLE::FLEXDIRECTION(f) => self.flex_direction = f,
             STYLE::BOXSIZING(f) => self.boxsizing = f,

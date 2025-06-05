@@ -23,7 +23,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::interfaces::{BASICSTRUCT, Document, EVENT};
+use crate::interfaces::{BASICSTRUCT, DIMEN, Document, EVENT, STYLE};
 
 pub mod components;
 pub mod interfaces;
@@ -66,7 +66,7 @@ fn initialize() {
     cbreak();
     nodelay(stdscr(), true); // make getch non-blocking
     use_default_colors();
-    mousemask((ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION) as mmask_t, None);
+    mousemask((ALL_MOUSE_EVENTS) as mmask_t, None);
     mouseinterval(0);
     refresh();
 }
@@ -79,7 +79,7 @@ fn debug_tree(node: Arc<Mutex<IView>>, tabs: i32) {
     print!("|-");
     match &iview.content {
         interfaces::IViewContent::CHIDREN(items) => {
-            println!("IView_{}({}, {:p})", iview.id, iview.style.render, &*iview);
+            println!("IView_{}({}, {:p} {:?})", iview.id, iview.style.render, &*iview,iview.style.height);
             items.iter().for_each(|child| {
                 debug_tree(child.clone(), tabs + 1);
             });
@@ -151,7 +151,16 @@ fn create_tree(
  * **HAS** SIDE-EFFECTS
  */
 fn create_render_tree(node: Arc<Mutex<dyn Component>>) -> Arc<Mutex<IView>> {
-    let parent = IView::new().build();
+    let parent = IView::new()
+        .set_style(STYLE::HIEGHT(DIMEN::PERCENT(100.)))
+        .set_style(STYLE::WIDTH(DIMEN::PERCENT(100.)))
+        .build();
+
+        {
+
+            let iview = parent.lock().unwrap();
+            println!("IView_{}({}, {:p} {:?})", iview.id, iview.style.render, &*iview,iview.style.height);
+        }
 
     let fiber = create_tree(node, parent.clone(), false);
 
@@ -676,7 +685,7 @@ pub fn run(app: impl Component) {
  */
 #[cfg(test)]
 mod test {
-    use std::sync::{Arc, Mutex};
+    use std::{io::{stdout, Write}, panic, sync::{Arc, Mutex}};
 
     use ncurses::{endwin, getch};
 
@@ -761,13 +770,13 @@ mod test {
                 ],
                 vec![
                     STYLE::TABORDER(0),
-                    STYLE::HIEGHT(DIMEN::INT(6)),
+                    STYLE::HIEGHT(DIMEN::PERCENT(50.0)),
                     STYLE::PADDINGLEFT(DIMEN::INT(10)),
                     STYLE::PADDINGTOP(DIMEN::INT(10)),
                     STYLE::PADDINGBOTTOM(DIMEN::INT(10)),
                     STYLE::PADDINGRIGHT(DIMEN::INT(10)),
                     STYLE::OVERFLOW(OVERFLOWBEHAVIOUR::SCROLL),
-                    // STYLE::BOXSIZING(BOXSIZING::BORDERBOX),
+                    STYLE::BOXSIZING(BOXSIZING::BORDERBOX),
                 ],
             )
             .build()
@@ -849,12 +858,25 @@ mod test {
 
     #[test]
     fn test_create_tree1() {
+        panic::set_hook(Box::new(|info| {
+            // Disable SGR mouse mode
+            println!("\033[?1006l");
+            stdout().flush();
+            endwin();
+            println!("{}",info);
+        }));
+
+        // Enable extended mouse reporting if available
+        println!("\033[?1006h"); // Enable SGR mouse mode
+        stdout().flush();
+
         // clear();
         let dm = DemoApp3 {
             v1: format!("Namaste"),
         };
         let node: Arc<Mutex<dyn Component>> = Arc::new(Mutex::new(dm));
         let root = create_render_tree(node);
+
         debug_tree(root.clone(), 0);
         {
             let Some(fiber) = DOCUMENT.lock().unwrap().curr_fiber.clone() else {
@@ -882,6 +904,8 @@ mod test {
                 break;
             }
         }
+        println!("\033[?1006l");
+        stdout().flush();
         endwin();
 
         // debug_tree(root.clone(), 0);

@@ -10,8 +10,7 @@ use std::{
 };
 
 use ncurses::{
-    BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, WINDOW, box_, copywin,
-    delwin, endwin, mvwprintw, newpad, newwin, wbkgd, wrefresh,
+    box_, copywin, delwin, endwin, mvwprintw, newpad, newwin, wbkgd, wrefresh, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, BUTTON_SHIFT, WINDOW
 };
 
 use crate::{
@@ -133,7 +132,7 @@ impl IView {
         iview
     }
 
-    pub(crate) fn set_style(&mut self, style: STYLE) -> &mut Self {
+    pub(crate) fn set_style(mut self, style: STYLE) -> Self {
         self.style.set_style(style);
         self
     }
@@ -370,7 +369,6 @@ impl IView {
 
         // height and width from children
         let changed = self.style.render;
-
         if changed {
             // if self.dimensions depends on parent
             match self.style.height {
@@ -378,7 +376,7 @@ impl IView {
                     // if parent dimension is not defined i.e. depends on child itself then error
                     if parent_height < 0 {
                         panic!(
-                            "Circular dependence on dimensions: Parent does not have a dimension, while child depends on it. <Some Debug Info>"
+                            "Circular dependence on dimensions: Parent does not have a dimension, while child depends on it. <Some Debug Info>{:p}",self
                         )
                     }
 
@@ -402,7 +400,7 @@ impl IView {
                             "Circular dependence on dimensions: Parent does not have a dimension, while child depends on it. <Some Debug Info>"
                         )
                     }
-
+                    
                     // calculate the dimensions
                     // it may be either percentage or flex
                     // if flex then parent will have converted the width to PERCEN
@@ -440,7 +438,6 @@ impl IView {
         let (cheight, cwidth, changed) = self.calculate_child_dimensions(changed);
         // content dimensions would have been updated if depend on child
 
-        // println!("{} {}", self.content_height, self.content_width);
         if changed {
             // if previously padding was not calculated (due to content box), then it will be calculated now
             self.fill_box_infos();
@@ -482,17 +479,42 @@ impl IView {
      */
     fn corrected_render_box(
         &self,
-        child_render_box: &RenderBox,
+        child_render_box: &mut RenderBox,
         top_left: &(i32, i32),
         last_cusor: &(i32, i32),
     ) -> RenderBox {
         let mut curr_render_box = RenderBox {
-            toplefty: child_render_box.toplefty + top_left.0 - self.scrolly,
+            toplefty: child_render_box.toplefty + top_left.0 - self.scrolly, 
             topleftx: child_render_box.topleftx + top_left.1 - self.scrollx,
             bottomrighty: child_render_box.bottomrighty + top_left.0 - self.scrolly,
             bottomrightx: child_render_box.bottomrightx + top_left.1 - self.scrollx,
         };
 
+        if curr_render_box.toplefty < 0 {
+            // means we need to cut some top portion from the child
+            child_render_box.toplefty += -curr_render_box.toplefty; // shift it down by as much as negative
+            child_render_box.toplefty = child_render_box.toplefty.min(child_render_box.bottomrighty);
+            curr_render_box.toplefty = 0;
+        }
+        if curr_render_box.topleftx < 0 {
+            // same for x direction
+            child_render_box.topleftx += -curr_render_box.topleftx; // shift it right by as much as negative
+            child_render_box.topleftx = child_render_box.topleftx.min(child_render_box.bottomrightx); // clamp it by bottomright
+            curr_render_box.topleftx = 0;
+        }
+        // bottom may also go above curr scroll
+        if curr_render_box.bottomrighty < 0 {
+            // means we need to cut some top portion from the child
+            child_render_box.bottomrighty += -curr_render_box.bottomrighty; // shift it down by as much as negative
+            curr_render_box.bottomrighty = 0;
+        }
+        if curr_render_box.bottomrightx < 0 {
+            // same for x direction
+            child_render_box.bottomrightx += -curr_render_box.bottomrightx; // shift it right by as much as negative
+            curr_render_box.bottomrightx = 0;
+        }
+        
+        // no point must cross the lastcursor
         curr_render_box.toplefty = curr_render_box.toplefty.max(0).min(last_cusor.0);
         curr_render_box.topleftx = curr_render_box.topleftx.max(0).min(last_cusor.1);
         curr_render_box.bottomrighty = curr_render_box.bottomrighty.max(0).min(last_cusor.0);
@@ -599,10 +621,10 @@ impl IView {
                         return;
                     }
 
-                    let (render_box, child_win) = child_lk.clone().lock().unwrap().__render__();
+                    let (mut render_box, child_win) = child_lk.clone().lock().unwrap().__render__();
                     // update the render box
                     let curr_box =
-                        self.corrected_render_box(&render_box, &prevtopleft, &last_cursor);
+                        self.corrected_render_box(&mut render_box, &prevtopleft, &last_cursor);
                     // println!(
                     //     "{:p}{:?} {:?} {:?}",
                     //     self, render_box, curr_box, prevtopleft
@@ -693,31 +715,53 @@ impl IView {
             let Some(mevent) = &event.mevent else {
                 panic!("Invalid Handler")
             };
-            if mevent.bstate == BUTTON1_PRESSED as u32 {
+            if mevent.bstate & BUTTON1_PRESSED as u32 > 0 {
                 // left mouse clicked
                 if self.style.taborder >= 0 {
                     // make this the active element
                     DOCUMENT.lock().unwrap().focus(self.id);
                 }
-            } else if mevent.bstate != BUTTON2_PRESSED as u32
+            } else if (mevent.bstate & BUTTON2_PRESSED as u32 == 0)
                 && matches!(self.style.scroll, OVERFLOWBEHAVIOUR::SCROLL)
             {
-                if mevent.bstate == BUTTON4_PRESSED as u32 {
-                    // scroll down
-                    if self.scrolly > 0 {
-                        self.scrolly -= 1;
-                        self.style.render = true;
+                if mevent.bstate & BUTTON4_PRESSED as u32 > 0 {
+                    if mevent.bstate & BUTTON_SHIFT as u32 > 0 {
+                        // scroll right
+                        if self.scrollx > 0 {
+                            self.scrollx -= 1;
+                            self.style.render = true;
+                        }
+                    } else {
+                        // scroll down
+                        if self.scrolly > 0 {
+                            self.scrolly -= 1;
+                            self.style.render = true;
+                        }
                     }
-                } else if mevent.bstate == BUTTON5_PRESSED as u32 {
-                    // scroll up
-                    if self.scrolly
+                } else if mevent.bstate & BUTTON5_PRESSED as u32 > 0 {
+                    if mevent.bstate & BUTTON_SHIFT as u32 > 0 {
+                        // scroll left
+                        if self.scrollx
+                        < self.children_width
+                        - self.content_width
+                        - self.paddingleft
+                        - self.paddingright
+                        {
+                            self.scrollx += 1;
+                            self.style.render = true;
+                        }
+                    } else {
+
+                        // scroll up
+                        if self.scrolly
                         < self.children_height
-                            - self.content_height
-                            - self.paddingbottom
-                            - self.paddingtop
-                    {
-                        self.scrolly += 1;
-                        self.style.render = true;
+                        - self.content_height
+                        - self.paddingbottom
+                        - self.paddingtop
+                        {
+                            self.scrolly += 1;
+                            self.style.render = true;
+                        }
                     }
                 }
             }
