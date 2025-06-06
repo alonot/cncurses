@@ -10,7 +10,10 @@ use std::{
 };
 
 use ncurses::{
-    box_, copywin, delwin, endwin, getmaxyx, mvwprintw, newpad, newwin, wbkgd, wrefresh, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, BUTTON_SHIFT, WINDOW
+    BUTTON_SHIFT, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, COLOR_BLUE,
+    COLOR_CYAN, COLOR_GREEN, COLOR_MAGENTA, COLOR_PAIR, COLOR_RED, WINDOW, attroff, attron, box_,
+    copywin, delwin, endwin, getmaxyx, init_pair, mvwprintw, newpad, newwin, pair_content,
+    wattroff, wattron, wbkgd, wrefresh,
 };
 
 use crate::{
@@ -364,8 +367,8 @@ impl IView {
                 let win = newwin(
                     self.content_height + self.extray,
                     self.content_width + self.extrax,
-                    0,
-                    0,
+                    30,
+                    30,
                 );
                 self.basic_struct = Some(BASICSTRUCT::WIN(win));
             }
@@ -548,6 +551,8 @@ impl IView {
      *      rendered toplefty, topleftx
      *      botomrighty and bottomrightx changed(rendered),
      *      its window (which should be rendered by the parent)
+     *
+     * uses DOCUMENT.lock()
      */
     pub(crate) fn __render__(&mut self) -> (RenderBox, WINDOW) {
         let mut topleft = (
@@ -584,10 +589,13 @@ impl IView {
         };
         let win: &WINDOW;
 
-        // println!(
-        //     "{:p} {:?} {:?} {} {}",
-        //     self, last_cursor, topleft, self.scrollx, self.scrolly
-        // );
+        let border_color = {
+            DOCUMENT
+                .lock()
+                .unwrap()
+                .get_color_pair(self.style.border_color, self.style.background_color)
+        };
+
 
         match &self.content {
             IViewContent::CHIDREN(icomponents) => {
@@ -601,9 +609,12 @@ impl IView {
                 if self.style.render {
                     // then we need to render this window itself
                     // so background must be updated
-                    wbkgd(*win, ' ' as u32);
+                    wbkgd(*win, ' ' as u32 | COLOR_PAIR(border_color));
                     if self.style.border > 0 {
+                        // println!("{} {}", self.style.border_color, self.style.background_color);
+                        wattron(*win, COLOR_PAIR(border_color)); // setting border_pair
                         box_(*win, 0, 0);
+                        wattroff(*win, COLOR_PAIR(border_color)); // setting border_pair
                     }
                 }
 
@@ -667,9 +678,8 @@ impl IView {
 
                     curr_render_box.update(&curr_box);
                 });
-
                 // if self.style.render {
-                // wrefresh(*win);
+                //     wrefresh(*win);
                 // }
             }
             IViewContent::TEXT(txt) => {
@@ -680,26 +690,40 @@ impl IView {
                 win = win_t;
 
                 if self.style.render {
-                    wbkgd(*win, ' ' as u32);
+                    let text_color = {
+                        DOCUMENT
+                            .lock()
+                            .unwrap()
+                            .get_color_pair(self.style.color, self.style.background_color)
+                    };
+
+                    wbkgd(*win, (' ' as u32 | COLOR_PAIR(border_color)));
+                    if self.style.border > 0 {
+                        wattron(*win, COLOR_PAIR(border_color)); // setting border_pair
+                        box_(*win, 0, 0);
+                        wattroff(*win, COLOR_PAIR(border_color)); // setting off border_pair
+                    }
                     let pad = newpad(self.children_height, self.children_width);
 
                     // then we need to render this window itself
                     // so background must be updated
-                    wbkgd(pad, ' ' as u32);
+                    wbkgd(pad, (' ' as u32 | COLOR_PAIR(border_color)));
 
+                    wattron(pad, COLOR_PAIR(text_color)); // setting text_pair
                     // display the text at curootrrent top and left
                     let res = mvwprintw(pad, 0, 0, &txt);
                     if let Err(_) = res {
                         println!("Warning: NULL Error while rendering Text View");
                     };
+                    wattroff(pad, COLOR_PAIR(text_color)); // setting off text_pair
 
                     copywin(
                         pad,
                         *win,
                         self.scrolly,
                         self.scrollx,
-                        topleft.0,
-                        topleft.1,
+                        topleft.0 + self.style.border,
+                        topleft.1 + self.style.border,
                         last_cursor.0 - self.paddingbottom + self.style.border,
                         last_cursor.1 - self.paddingright + self.style.border,
                         0,

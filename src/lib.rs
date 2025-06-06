@@ -11,16 +11,15 @@ TODO:
 use dyn_clone::clone;
 use interfaces::{Component, Fiber, IViewContent, Stateful};
 use ncurses::{
-    ALL_MOUSE_EVENTS, KEY_BTAB, KEY_MOUSE, KEY_MOVE, KEY_RESIZE, MEVENT, OK, REPORT_MOUSE_POSITION,
-    cbreak, curs_set, endwin, getch, getmaxyx, getmouse, initscr, keypad, mmask_t, mouseinterval,
-    mousemask, nodelay, noecho, printw, refresh, start_color, stdscr, use_default_colors, wrefresh,
+    cbreak, curs_set, endwin, getch, getmaxyx, getmouse, has_colors, initscr, keypad, mmask_t, mouseinterval, mousemask, nodelay, noecho, pair_content, printw, refresh, start_color, stdscr, use_default_colors, wrefresh, ALL_MOUSE_EVENTS, COLORS, COLOR_PAIRS, KEY_BTAB, KEY_MOUSE, KEY_MOVE, KEY_RESIZE, MEVENT, OK, REPORT_MOUSE_POSITION
 };
 use nmodels::IView::IView;
 use std::{
     any::TypeId,
+    collections::HashMap,
     fmt::Debug,
     i32,
-    sync::{Arc, Mutex},
+    sync::{Arc, LazyLock, Mutex},
 };
 
 use crate::interfaces::{BASICSTRUCT, DIMEN, Document, EVENT, STYLE};
@@ -56,6 +55,7 @@ fn get_key(v: &Arc<Mutex<dyn Component>>) -> String {
 
 /**
  * Initalize the window
+ * uses DOCUMENT.lock()
  */
 fn initialize() {
     initscr();
@@ -68,6 +68,17 @@ fn initialize() {
     use_default_colors();
     mousemask((ALL_MOUSE_EVENTS) as mmask_t, None);
     mouseinterval(0);
+    if has_colors() {
+        start_color();
+        {
+            let mut document = DOCUMENT.lock().unwrap();
+            document.total_allowed_pairs = COLOR_PAIRS();
+        }
+        use_default_colors();
+        // DOCUMENT.lock().unwrap().has_color = true;
+    } else {
+        println!("WARNING: Terminal does not support color");
+    }
     refresh();
 }
 
@@ -79,7 +90,10 @@ fn debug_tree(node: Arc<Mutex<IView>>, tabs: i32) {
     print!("|-");
     match &iview.content {
         interfaces::IViewContent::CHIDREN(items) => {
-            println!("IView_{}({}, {:p} {:?})", iview.id, iview.style.render, &*iview,iview.style.height);
+            println!(
+                "IView_{}({}, {:p} {:?})",
+                iview.id, iview.style.render, &*iview, iview.style.height
+            );
             items.iter().for_each(|child| {
                 debug_tree(child.clone(), tabs + 1);
             });
@@ -156,11 +170,13 @@ fn create_render_tree(node: Arc<Mutex<dyn Component>>) -> Arc<Mutex<IView>> {
         .set_style(STYLE::WIDTH(DIMEN::PERCENT(100.)))
         .build();
 
-        {
-
-            let iview = parent.lock().unwrap();
-            println!("IView_{}({}, {:p} {:?})", iview.id, iview.style.render, &*iview,iview.style.height);
-        }
+    {
+        let iview = parent.lock().unwrap();
+        println!(
+            "IView_{}({}, {:p} {:?})",
+            iview.id, iview.style.render, &*iview, iview.style.height
+        );
+    }
 
     let fiber = create_tree(node, parent.clone(), false);
 
@@ -470,7 +486,11 @@ fn tree_refresh(root: Arc<Mutex<IView>>) -> (i32, i32, bool) {
     let x = &mut 0;
     let y = &mut 0;
     getmaxyx(stdscr(), y, x);
-    DOCUMENT.lock().unwrap().clear_tab_order();
+    {
+        let mut document = DOCUMENT.lock().unwrap();
+        document.clear_tab_order();
+        document.clear_color_pairs();
+    }
     let res = root.lock().unwrap().__init__(*y, *x);
     if res.2 {
         DOCUMENT.lock().unwrap().create_tab_order();
@@ -577,12 +597,15 @@ fn handle_events(root: Arc<Mutex<IView>>) -> bool {
 
 /************  Public Functions  ********** */
 
-static DOCUMENT: Mutex<Document> = Mutex::new(Document {
+pub static DOCUMENT: Mutex<Document> = Mutex::new(Document {
     curr_fiber: None,
     tabindex: 0,
     taborder: vec![],
     unique_id: 0,
     changed: true,
+    color_pairs: LazyLock::new(|| Mutex::new(HashMap::<(i16, i16), u16>::new())),
+    total_allowed_pairs: 0,
+    curr_color_pair: 0,
 });
 
 /**
@@ -685,9 +708,13 @@ pub fn run(app: impl Component) {
  */
 #[cfg(test)]
 mod test {
-    use std::{io::{stdout, Write}, panic, sync::{Arc, Mutex}};
+    use std::{
+        io::{Write, stdout},
+        panic,
+        sync::{Arc, Mutex},
+    };
 
-    use ncurses::{endwin, getch};
+    use ncurses::{endwin, getch, COLOR_BLUE, COLOR_GREEN, COLOR_MAGENTA, COLOR_RED};
 
     use crate::{
         DOCUMENT,
@@ -726,11 +753,13 @@ mod test {
 
             setp1("Ram Ram Bhai Sare Ne".to_string());
 
+            let color = DOCUMENT.lock().unwrap().get_color(255, 60, 0);
+
             if p1 == "Ram Ram Bhai Sare Ne" {
                 View::new(
                     vec![
                         View::new(
-                            vec![Text::new("Shiv Shambo".to_string(), vec![]).build()],
+                            vec![Text::new("Shiv Shambo".to_string(), vec![STYLE::TEXTCOLOR(color)]).build()],
                             vec![],
                         )
                         .build(),
@@ -764,9 +793,9 @@ mod test {
                         val: self.v1.clone(),
                     }
                     .build(),
-                    Text::new("Hello asdnaksjdnakjsc ajs cjsd cjasdcjsadjcaskjdcnjasdncjasbdjchasbdjcasjdcnaksjdnclkasncalskjdnckalsnclksandckjansdlkcnaskjdcnaksndcasjkndsjsdajkdnjjsvabhjcnjcnjsdjlsdajxcnxcnkxcmnxcmnxcmnxcmnxcmnxcmnxcm,xcm,xcmnxcm,xcm,xcm,xcmnxcaskbkdjscbasdjcbjasbcjcbkasjbdcajcbashcjbaksjcbsajdchbasdj".to_string(), vec![STYLE::WIDTH(DIMEN::INT(10)), STYLE::OVERFLOW(OVERFLOWBEHAVIOUR::SCROLL),STYLE::HIEGHT(DIMEN::INT(10))]).onclick(|e| {
-                        println!("I was Called");
-                    }, true).build(),
+                    Text::new("Hello asdnaksjdnakjsc ajs cjsd cjasdcjsadjcaskjdcnjasdncjasbdjchasbdjcasjdcnaksjdnclkasncalskjdnckalsnclksandckjansdlkcnaskjdcnaksndcasjkndsjsdajkdnjjsvabhjcnjcnjsdjlsdajxcnxcnkxcmnxcmnxcmnxcmnxcmnxcmnxcm,xcm,xcmnxcm,xcm,xcm,xcmnxcaskbkdjscbasdjcbjasbcjcbkasjbdcajcbashcjbaksjcbsajdchbasdj".to_string(), vec![STYLE::WIDTH(DIMEN::INT(10)), STYLE::OVERFLOW(OVERFLOWBEHAVIOUR::SCROLL),STYLE::HIEGHT(DIMEN::INT(10)), STYLE::TEXTCOLOR(COLOR_MAGENTA)]).onclick(|e| {
+                println!("I was Called");
+            }, true).build()
                 ],
                 vec![
                     STYLE::TABORDER(0),
@@ -776,7 +805,8 @@ mod test {
                     STYLE::PADDINGBOTTOM(DIMEN::INT(10)),
                     STYLE::PADDINGRIGHT(DIMEN::INT(10)),
                     STYLE::BOXSIZING(BOXSIZING::BORDERBOX),
-                    STYLE::BORDER(true)
+                    STYLE::BORDER(true),
+                    STYLE::BORDERCOLOR(COLOR_RED)
                 ],
             )
             .build()
@@ -863,13 +893,14 @@ mod test {
             println!("\033[?1006l");
             stdout().flush();
             endwin();
-            println!("{}",info);
+            println!("{}", info);
         }));
 
         // Enable extended mouse reporting if available
         println!("\033[?1006h"); // Enable SGR mouse mode
         stdout().flush();
-
+        
+        initialize();
         // clear();
         let dm = DemoApp3 {
             v1: format!("Namaste"),
@@ -877,16 +908,7 @@ mod test {
         let node: Arc<Mutex<dyn Component>> = Arc::new(Mutex::new(dm));
         let root = create_render_tree(node);
 
-        debug_tree(root.clone(), 0);
-        {
-            let Some(fiber) = DOCUMENT.lock().unwrap().curr_fiber.clone() else {
-                panic!("No fiber")
-            };
 
-            debug_fiber_tree(fiber.clone(), 0);
-        }
-
-        initialize();
 
         loop {
             // if change, get the tree from the app.
@@ -896,6 +918,14 @@ mod test {
             // if changes, render the changed portion
             changed |= DOCUMENT.lock().unwrap().changed;
             if changed {
+                debug_tree(root.clone(), 0);
+        {
+            let Some(fiber) = DOCUMENT.lock().unwrap().curr_fiber.clone() else {
+                panic!("No fiber")
+            };
+
+            debug_fiber_tree(fiber.clone(), 0);
+        }
                 let _ = tree_refresh(root.clone());
             }
 

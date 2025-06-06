@@ -132,12 +132,34 @@ child will create its basic struct and parent will destroy it after copying
 While rendering we will correct the child's box as per (0,0) to (height + padding, width + padding).
 then while rendering we will render it from (y + border, x + border)
 
-  
+#### Coloring
+
+- New Color pair will be created with current background color and text color. 
+- New Color pair with background color and border color for borders.
+
+Parent must reserve the COLOR_PAIR() of its child to allow the colors to be copied to its window. 
+Example: If parent changed used init_pair(1) which replaces the init pair child was using this will result in different output at the screen
+
+Hence we use a HashMap to store the pair number for all the possible pairs in the image
+If pairs go above the available COLOR_PAIRS we set every further pairs to circle over from start but we don't replace the actual pair declared before.
+implemented using `Document.get_color_pair()`
+
+To keep default terminal color use negative number (every color is set to -1 by default).
+* For custom colors 
+  - define using `Document.new_color()`
+  - In normal terminal, colors are mapped in following manner.. 
+      0 - 15 : Standard
+      16 - 231 : RGB ( distributed as 6*6*6 box )
+      232 - 255: Grayscale
+
+#### Document
+
+- Manages the global state of the app. 
+- Only public function of Document is `get_color`
 
 ### Next:
 
-1. Border
 2. Margin
 3. Improving the user interface
-4. Colors and backgrounds
 5. Event Loop
+6. Extended Color support

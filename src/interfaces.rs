@@ -1,16 +1,10 @@
 use std::{
-    any::Any,
-    cell::RefCell,
-    clone,
-    mem::take,
-    rc::Rc,
-    sync::{Arc, Mutex},
+    any::Any, cell::RefCell, clone, collections::HashMap, mem::take, rc::Rc, sync::{Arc, LazyLock, Mutex}
 };
 
 use dyn_clone::DynClone;
 use ncurses::{
-    BUTTON1_PRESSED, BUTTON3_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, MENU, MEVENT, PANEL,
-    WINDOW, endwin, newwin,
+    endwin, init_color, init_pair, newwin, BUTTON1_PRESSED, BUTTON3_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, COLOR_BLACK, COLOR_WHITE, MENU, MEVENT, PANEL, WINDOW
 };
 
 use crate::nmodels::IView::IView;
@@ -179,11 +173,13 @@ pub(crate) struct Style {
     pub(crate) paddingbottom: DIMEN,
     
     pub(crate) border: i32,
+    pub(crate) border_color: i16,
+    pub(crate) color: i16,
+    pub(crate) background_color: i16,
     pub(crate) taborder: i32,
     pub(crate) boxsizing: BOXSIZING,
     pub(crate) flex: u32,
     pub(crate) flex_direction: FLEXDIRECTION,
-    pub(crate) background_color: i32,
     pub(crate) z_index: i32,
     pub(crate) onclick_bubble: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + Send>>>, // should be a clousure
     pub(crate) onscroll_bubble: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + Send>>>, // should be a clousure
@@ -208,9 +204,11 @@ impl Style {
             paddingright: DIMEN::default(),
             paddingbottom: DIMEN::default(),
             border: 0,
+            border_color: -1,
+            color: -1,
+            background_color: -2,   
             flex_direction: FLEXDIRECTION::default(),
             boxsizing: BOXSIZING::default(),
-            background_color: 0,
             flex: 0,
             taborder: -1,
             z_index: 0,
@@ -238,6 +236,8 @@ impl Style {
             STYLE::FLEXDIRECTION(f) => self.flex_direction = f,
             STYLE::BOXSIZING(f) => self.boxsizing = f,
             STYLE::BACKGROUNDCOLOR(bg) => self.background_color = bg,
+            STYLE::TEXTCOLOR(bg) => self.color = bg,
+            STYLE::BORDERCOLOR(bg) => self.border_color = bg,
             STYLE::ZINDEX(z) => self.z_index = z,
             STYLE::OVERFLOW(overflow_behaviour) => self.scroll = overflow_behaviour,
         }
@@ -337,12 +337,14 @@ pub enum STYLE {
     PADDINGBOTTOM(DIMEN),
     TABORDER(i32),
     BORDER(bool),
+    BACKGROUNDCOLOR(i16),
+    TEXTCOLOR(i16),
+    BORDERCOLOR(i16),
     BOXSIZING(BOXSIZING),
     /** 0 means unset. Actual Height and width dimensions with INT gets priority over flex. if they are set with PERCEN then flex gets priority. */
     FLEX(u32),
     /**Default Vertical */
     FLEXDIRECTION(FLEXDIRECTION),
-    BACKGROUNDCOLOR(i32),
     ZINDEX(i32),
     OVERFLOW(OVERFLOWBEHAVIOUR),
 }
@@ -391,11 +393,19 @@ pub(crate) struct TabElement {
     iview: Arc<Mutex<IView>>
 }
 
-pub(crate) struct Document {
+pub struct Document {
     pub(crate) curr_fiber: Option<Arc<Mutex<Fiber>>>,
     pub(crate) taborder: Vec<TabElement>,
     pub(crate) tabindex: usize,
     pub(crate) unique_id: i32,
+    pub(crate) color_pairs: LazyLock<Mutex<HashMap<(i16, i16), u16>>>,
+    // pub(crate) colors: LazyLock<Mutex<HashMap<(i16, i16, i16), u16>>>,
+    pub(crate) total_allowed_pairs: i32,
+    // pub(crate) max_supported_colors: i32,
+    // pub(crate) curr_color: u16,
+    /** Used when color_pairs goes above limit(COLOR_PAIRS) */
+    pub(crate) curr_color_pair: u16,
+    /** Used when colors goes above limit(COLORS) */
     /** turned true if some changed happen to any IView. (This may occur even though there was no state change in Fiber. Eg of such events. Scroll, Focus) */
     pub(crate) changed:bool
 }
@@ -403,6 +413,54 @@ pub(crate) struct Document {
 impl Document {
     pub(crate) fn clear_fiber(&mut self) {
         self.curr_fiber = None;
+    }
+
+    /**
+     * returns pair Number
+     * 
+     * if this pair already exists return the pair number
+     * OR
+     * initialize a new pair using the given pairs
+     * if total pairs limit cross then ignores the give pairs and just returns previously initialized pairs in circular format
+     * 
+     */
+    pub(crate) fn get_color_pair(&mut self, color_foregorund: i16, color_background: i16) -> i16 {
+        let mut c_pairs = self.color_pairs.lock().unwrap();
+        let pair = (color_foregorund, color_background);
+        if let Some(pair_no) = c_pairs.get(&pair) {
+            return *pair_no as i16;
+        }
+        let pair_no = self.curr_color_pair;
+        if c_pairs.len() as i32 >= self.total_allowed_pairs {
+            self.curr_color_pair += 1;
+            self.curr_color_pair = self.curr_color_pair % c_pairs.len() as u16;
+            return pair_no as i16;
+        }
+        init_pair(pair_no as i16, color_foregorund, color_background);
+        c_pairs.insert(pair, pair_no);
+        self.curr_color_pair += 1;
+        return pair_no as i16;
+    }
+   
+    /**
+     * returns color index
+     * 
+     * red : 0 - 255
+     * green: 0 - 255
+     * blue: 0 - 255
+     * 
+     * in box : (6 * 6 * 6)
+     * 
+     */
+    pub fn get_color(&mut self, red: i16, green: i16, blue: i16) -> i16 {
+        let (r, g,b) = (red.min(255) / 51, green.min(255) / 51, blue.min(255) / 51 );
+        return 16 + (36 * r + 6 * g + b);
+    }
+
+    pub(crate) fn clear_color_pairs(&mut self) {
+        let mut c_pairs = self.color_pairs.lock().unwrap();
+        c_pairs.clear();
+        self.curr_color_pair = 0;
     }
 
     /**
