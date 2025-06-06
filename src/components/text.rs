@@ -1,6 +1,6 @@
 use std::{mem::take, sync::{Arc, Mutex}};
 
-use crate::{interfaces::{EVENT, STYLE}, nmodels::IView::IView, Component};
+use crate::{interfaces::{EVENT, STYLE}, nmodels::IView::IView, Component, LOGLn};
 
 /* Text 
  Basic Text which can hold an string
@@ -16,6 +16,9 @@ impl Component for Text {
     }
     fn __base__(&self) -> Option<Arc<Mutex<IView>>> {
         Some(self.base_component.clone())
+    }
+    fn __key__(&self) -> Option<&String> {
+        self.key.as_ref()
     }
 }
 

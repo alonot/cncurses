@@ -17,11 +17,9 @@ use ncurses::{
 };
 
 use crate::{
-    DOCUMENT,
     interfaces::{
-        BASICSTRUCT, BOXSIZING, Component, DIMEN, EVENT, FIT_CONTENT, FLEXDIRECTION, IViewContent,
-        OVERFLOWBEHAVIOUR, STYLE, Style,
-    },
+        Component, IViewContent, Style, BASICSTRUCT, BOXSIZING, DIMEN, EVENT, FIT_CONTENT, FLEXDIRECTION, OVERFLOWBEHAVIOUR, STYLE
+    }, DOCUMENT, LOGLn
 };
 
 #[derive(Debug)]
@@ -195,7 +193,7 @@ impl IView {
         let mut cheight = 0;
         let mut cwidth = 0;
         let depend_on_child = (self.content_height < 0) || (self.content_width < 0);
-
+        
         // init the chidlren and calculate the new height if dependent on children
         match &self.content {
             IViewContent::CHIDREN(items) => {
@@ -206,7 +204,7 @@ impl IView {
 
                 let direction = &self.style.flex_direction;
 
-                (cheight, cwidth, changed) = items.iter().fold((0, 0, false), |prev, child_lk| {
+                (cheight, cwidth, changed) = items.iter().fold((0, 0, changed), |prev, child_lk| {
                     let taborder = {
                         let child = child_lk.lock().unwrap();
                         child.style.taborder
@@ -265,6 +263,7 @@ impl IView {
                 }
             }
         };
+        
 
         (cheight, cwidth, changed)
     }
@@ -347,7 +346,7 @@ impl IView {
     fn init_basic_struct(&mut self) {
         match &self.content {
             IViewContent::CHIDREN(_) => {
-                // println!(
+                // LOG!(
                 //     "{} {} {} {}",
                 //     self.content_height + self.extray,
                 //     self.content_width + self.extrax,
@@ -363,7 +362,7 @@ impl IView {
             }
             IViewContent::TEXT(txt) => {
                 // create a pad
-                // println!("{txt} {} {} {} {}", self.content_height + self.extray, self.content_width + self.extrax, self.height, self.width);
+                // LOG!("{txt} {} {} {} {}", self.content_height + self.extray, self.content_width + self.extrax, self.height, self.width);
                 let win = newwin(
                     self.content_height + self.extray,
                     self.content_width + self.extrax,
@@ -457,7 +456,6 @@ impl IView {
 
         let (cheight, cwidth, changed) = self.calculate_child_dimensions(changed);
         // content dimensions would have been updated if depend on child
-
         if changed {
             // if previously padding was not calculated (due to content box), then it will be calculated now
             self.fill_box_infos();
@@ -482,13 +480,13 @@ impl IView {
             // update the height and width with padding
             self.height += self.extray;
             self.width += self.extrax;
-            // println!(
-            //     "{} {} : {} {}",
-            //     self.height, self.width, self.content_height, self.content_width
-            // );
-
+            
             self.children_height = cheight + self.extray;
             self.children_width = cwidth + self.extrax;
+            // LOGLn!(format!(
+            //     "{} {} : {} {} {}",
+            //     self.height, self.width, self.content_height, self.content_width ,self.style.render
+            // ));
         }
 
         (self.height, self.width, changed)
@@ -611,7 +609,7 @@ impl IView {
                     // so background must be updated
                     wbkgd(*win, ' ' as u32 | COLOR_PAIR(border_color));
                     if self.style.border > 0 {
-                        // println!("{} {}", self.style.border_color, self.style.background_color);
+                        // LOG!("{} {}", self.style.border_color, self.style.background_color);
                         wattron(*win, COLOR_PAIR(border_color)); // setting border_pair
                         box_(*win, 0, 0);
                         wattroff(*win, COLOR_PAIR(border_color)); // setting border_pair
@@ -627,7 +625,7 @@ impl IView {
                 icomponents.iter().for_each(|child_lk| {
                     // calls the render function of child if it's bounds are within the view port of this window
                     // gets the width covered by the child
-                    // println!("SEND {:p} {:?} {:?} {}", self, topleft, scroll_end_cursor ,self.content_height);
+                    // LOG!("SEND {:p} {:?} {:?} {}", self, topleft, scroll_end_cursor ,self.content_height);
                     if topleft.0 >= scroll_end_cursor.0 || topleft.1 >= scroll_end_cursor.1 {
                         return;
                     }
@@ -655,10 +653,10 @@ impl IView {
                     // update the render box
                     let curr_box =
                         self.corrected_render_box(&mut render_box, &prevtopleft, &last_cursor);
-                    // println!(
+                    // LOGLn!(format!(
                     //     "{:p}{:?} {:?} {:?}",
                     //     self, render_box, curr_box, prevtopleft
-                    // );
+                    // ));
 
                     // need to consider the flex direction
                     // place the child at current top and left position
@@ -697,6 +695,8 @@ impl IView {
                             .get_color_pair(self.style.color, self.style.background_color)
                     };
 
+                    // LOGLn!(format!("{} {}", txt, self.style.color));
+
                     wbkgd(*win, (' ' as u32 | COLOR_PAIR(border_color)));
                     if self.style.border > 0 {
                         wattron(*win, COLOR_PAIR(border_color)); // setting border_pair
@@ -713,7 +713,7 @@ impl IView {
                     // display the text at curootrrent top and left
                     let res = mvwprintw(pad, 0, 0, &txt);
                     if let Err(_) = res {
-                        println!("Warning: NULL Error while rendering Text View");
+                        LOGLn!("Warning: NULL Error while rendering Text View");
                     };
                     wattroff(pad, COLOR_PAIR(text_color)); // setting off text_pair
 
