@@ -129,6 +129,8 @@ Mouse Events supports both bubbling and capture.
   ```
 
 child will create its basic struct and parent will destroy it after copying
+While rendering we will correct the child's box as per (0,0) to (height + padding, width + padding).
+then while rendering we will render it from (y + border, x + border)
 
   
 
@@ -137,4 +139,5 @@ child will create its basic struct and parent will destroy it after copying
 1. Border
 2. Margin
 3. Improving the user interface
-4. Event Loop
+4. Colors and backgrounds
+5. Event Loop

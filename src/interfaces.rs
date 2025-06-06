@@ -177,7 +177,8 @@ pub(crate) struct Style {
     pub(crate) paddingtop: DIMEN,
     pub(crate) paddingright: DIMEN,
     pub(crate) paddingbottom: DIMEN,
-
+    
+    pub(crate) border: i32,
     pub(crate) taborder: i32,
     pub(crate) boxsizing: BOXSIZING,
     pub(crate) flex: u32,
@@ -206,6 +207,7 @@ impl Style {
             paddingtop: DIMEN::default(),
             paddingright: DIMEN::default(),
             paddingbottom: DIMEN::default(),
+            border: 0,
             flex_direction: FLEXDIRECTION::default(),
             boxsizing: BOXSIZING::default(),
             background_color: 0,
@@ -231,6 +233,7 @@ impl Style {
             STYLE::PADDINGTOP(p) => self.paddingtop = p.verify(),
             STYLE::PADDINGRIGHT(p) => self.paddingright = p.verify(),
             STYLE::PADDINGBOTTOM(p) => self.paddingbottom = p.verify(),
+            STYLE::BORDER(b) => self.border = b as i32,
             STYLE::FLEX(f) => self.flex = f,
             STYLE::FLEXDIRECTION(f) => self.flex_direction = f,
             STYLE::BOXSIZING(f) => self.boxsizing = f,
@@ -333,6 +336,7 @@ pub enum STYLE {
     PADDINGRIGHT(DIMEN),
     PADDINGBOTTOM(DIMEN),
     TABORDER(i32),
+    BORDER(bool),
     BOXSIZING(BOXSIZING),
     /** 0 means unset. Actual Height and width dimensions with INT gets priority over flex. if they are set with PERCEN then flex gets priority. */
     FLEX(u32),

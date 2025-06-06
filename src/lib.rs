@@ -764,19 +764,19 @@ mod test {
                         val: self.v1.clone(),
                     }
                     .build(),
-                    Text::new("Hello asdnaksjdnakjsc ajs cjsd cjasdcjsadjcaskjdcnjasdncjasbdjchasbdjcasjdcnaksjdnclkasncalskjdnckalsnclksandckjansdlkcnaskjdcnaksndcasjkndsjsdajkdnjjsvabhjcnjcnjsdjlsdajxcnxcnkxcmnxcmnxcmnxcmnxcmnxcmnxcm,xcm,xcmnxcm,xcm,xcm,xcmnxcaskbkdjscbasdjcbjasbcjcbkasjbdcajcbashcjbaksjcbsajdchbasdj".to_string(), vec![STYLE::WIDTH(DIMEN::INT(10))]).onclick(|e| {
+                    Text::new("Hello asdnaksjdnakjsc ajs cjsd cjasdcjsadjcaskjdcnjasdncjasbdjchasbdjcasjdcnaksjdnclkasncalskjdnckalsnclksandckjansdlkcnaskjdcnaksndcasjkndsjsdajkdnjjsvabhjcnjcnjsdjlsdajxcnxcnkxcmnxcmnxcmnxcmnxcmnxcmnxcm,xcm,xcmnxcm,xcm,xcm,xcmnxcaskbkdjscbasdjcbjasbcjcbkasjbdcajcbashcjbaksjcbsajdchbasdj".to_string(), vec![STYLE::WIDTH(DIMEN::INT(10)), STYLE::OVERFLOW(OVERFLOWBEHAVIOUR::SCROLL),STYLE::HIEGHT(DIMEN::INT(10))]).onclick(|e| {
                         println!("I was Called");
                     }, true).build(),
                 ],
                 vec![
                     STYLE::TABORDER(0),
-                    STYLE::HIEGHT(DIMEN::PERCENT(50.0)),
+                    STYLE::HIEGHT(DIMEN::PERCENT(50.)),
                     STYLE::PADDINGLEFT(DIMEN::INT(10)),
                     STYLE::PADDINGTOP(DIMEN::INT(10)),
                     STYLE::PADDINGBOTTOM(DIMEN::INT(10)),
                     STYLE::PADDINGRIGHT(DIMEN::INT(10)),
-                    STYLE::OVERFLOW(OVERFLOWBEHAVIOUR::SCROLL),
                     STYLE::BOXSIZING(BOXSIZING::BORDERBOX),
+                    STYLE::BORDER(true)
                 ],
             )
             .build()

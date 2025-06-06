@@ -10,7 +10,7 @@ use std::{
 };
 
 use ncurses::{
-    box_, copywin, delwin, endwin, mvwprintw, newpad, newwin, wbkgd, wrefresh, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, BUTTON_SHIFT, WINDOW
+    box_, copywin, delwin, endwin, getmaxyx, mvwprintw, newpad, newwin, wbkgd, wrefresh, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, BUTTON_SHIFT, WINDOW
 };
 
 use crate::{
@@ -25,8 +25,8 @@ use crate::{
 pub(crate) struct RenderBox {
     pub(crate) toplefty: i32,
     pub(crate) topleftx: i32,
-    pub(crate) bottomrightx: i32,
     pub(crate) bottomrighty: i32,
+    pub(crate) bottomrightx: i32,
 }
 
 impl RenderBox {
@@ -59,12 +59,18 @@ pub(crate) struct IView {
     content_height: i32,
     /** Only the dimen of content(without padding, border) */
     content_width: i32,
+
     paddingleft: i32,
     paddingtop: i32,
     paddingright: i32,
     paddingbottom: i32,
     marginx: i32,
     marginy: i32,
+    /**Extra above the content width */
+    extrax: i32,
+    /**Extra above the content height */
+    extray: i32,
+
     scrollx: i32,
     scrolly: i32,
     /**  Used to check scroll limit. Has Extra Padding values added during init */
@@ -101,6 +107,8 @@ impl IView {
             paddingbottom: 0,
             marginx: 0,
             marginy: 0,
+            extrax: 0,
+            extray: 0,
             children_height: 0,
             children_width: 0,
             id: id,
@@ -240,7 +248,7 @@ impl IView {
                 if changed {
                     // update chieght and cwidth
                     if self.content_width <= 0 {
-                        self.content_width = txt.len() as i32 + 1;
+                        self.content_width = txt.len() as i32;
                     }
 
                     if self.content_width > 0 {
@@ -334,23 +342,31 @@ impl IView {
     }
 
     fn init_basic_struct(&mut self) {
-        let extrax = self.paddingleft + self.paddingright;
-        let extray = self.paddingbottom + self.paddingtop;
-
         match &self.content {
             IViewContent::CHIDREN(_) => {
-                // println!("{} {} {} {}", self.content_height + extray, self.content_width + extrax, self.height, self.width);
+                // println!(
+                //     "{} {} {} {}",
+                //     self.content_height + self.extray,
+                //     self.content_width + self.extrax,
+                //     self.height,
+                //     self.width
+                // );
                 self.basic_struct = Some(BASICSTRUCT::WIN(newwin(
-                    self.content_height + extray,
-                    self.content_width + extrax,
+                    self.content_height + self.extray,
+                    self.content_width + self.extrax,
                     0,
                     0,
                 )));
             }
             IViewContent::TEXT(txt) => {
                 // create a pad
-                // println!("{txt} {} {} {} {}", self.content_height + extray, self.content_width + extrax, self.height, self.width);
-                let win = newpad(self.content_height + extray, self.content_width + extrax);
+                // println!("{txt} {} {} {} {}", self.content_height + self.extray, self.content_width + self.extrax, self.height, self.width);
+                let win = newwin(
+                    self.content_height + self.extray,
+                    self.content_width + self.extrax,
+                    0,
+                    0,
+                );
                 self.basic_struct = Some(BASICSTRUCT::WIN(win));
             }
         }
@@ -376,7 +392,8 @@ impl IView {
                     // if parent dimension is not defined i.e. depends on child itself then error
                     if parent_height < 0 {
                         panic!(
-                            "Circular dependence on dimensions: Parent does not have a dimension, while child depends on it. <Some Debug Info>{:p}",self
+                            "Circular dependence on dimensions: Parent does not have a dimension, while child depends on it. <Some Debug Info>{:p}",
+                            self
                         )
                     }
 
@@ -400,7 +417,7 @@ impl IView {
                             "Circular dependence on dimensions: Parent does not have a dimension, while child depends on it. <Some Debug Info>"
                         )
                     }
-                    
+
                     // calculate the dimensions
                     // it may be either percentage or flex
                     // if flex then parent will have converted the width to PERCEN
@@ -456,19 +473,19 @@ impl IView {
                 self.content_width = cwidth;
             }
 
-            let extrax = self.paddingleft + self.paddingright;
-            let extray = self.paddingbottom + self.paddingtop;
+            self.extrax = self.paddingleft + self.paddingright + (self.style.border * 2);
+            self.extray = self.paddingbottom + self.paddingtop + (self.style.border * 2);
 
             // update the height and width with padding
-            self.height += extray;
-            self.width += extrax;
+            self.height += self.extray;
+            self.width += self.extrax;
             // println!(
             //     "{} {} : {} {}",
             //     self.height, self.width, self.content_height, self.content_width
             // );
 
-            self.children_height = cheight + extray;
-            self.children_width = cwidth + extrax;
+            self.children_height = cheight + self.extray;
+            self.children_width = cwidth + self.extrax;
         }
 
         (self.height, self.width, changed)
@@ -484,7 +501,7 @@ impl IView {
         last_cusor: &(i32, i32),
     ) -> RenderBox {
         let mut curr_render_box = RenderBox {
-            toplefty: child_render_box.toplefty + top_left.0 - self.scrolly, 
+            toplefty: child_render_box.toplefty + top_left.0 - self.scrolly,
             topleftx: child_render_box.topleftx + top_left.1 - self.scrollx,
             bottomrighty: child_render_box.bottomrighty + top_left.0 - self.scrolly,
             bottomrightx: child_render_box.bottomrightx + top_left.1 - self.scrollx,
@@ -493,13 +510,15 @@ impl IView {
         if curr_render_box.toplefty < 0 {
             // means we need to cut some top portion from the child
             child_render_box.toplefty += -curr_render_box.toplefty; // shift it down by as much as negative
-            child_render_box.toplefty = child_render_box.toplefty.min(child_render_box.bottomrighty);
+            child_render_box.toplefty =
+                child_render_box.toplefty.min(child_render_box.bottomrighty);
             curr_render_box.toplefty = 0;
         }
         if curr_render_box.topleftx < 0 {
             // same for x direction
             child_render_box.topleftx += -curr_render_box.topleftx; // shift it right by as much as negative
-            child_render_box.topleftx = child_render_box.topleftx.min(child_render_box.bottomrightx); // clamp it by bottomright
+            child_render_box.topleftx =
+                child_render_box.topleftx.min(child_render_box.bottomrightx); // clamp it by bottomright
             curr_render_box.topleftx = 0;
         }
         // bottom may also go above curr scroll
@@ -513,7 +532,7 @@ impl IView {
             child_render_box.bottomrightx += -curr_render_box.bottomrightx; // shift it right by as much as negative
             curr_render_box.bottomrightx = 0;
         }
-        
+
         // no point must cross the lastcursor
         curr_render_box.toplefty = curr_render_box.toplefty.max(0).min(last_cusor.0);
         curr_render_box.topleftx = curr_render_box.topleftx.max(0).min(last_cusor.1);
@@ -531,15 +550,13 @@ impl IView {
      *      its window (which should be rendered by the parent)
      */
     pub(crate) fn __render__(&mut self) -> (RenderBox, WINDOW) {
-        let extra = (
-            self.paddingbottom + self.paddingtop,
-            self.paddingleft + self.paddingright,
-        );
-
-        let mut topleft = (self.paddingtop, self.paddingleft); // virtual screen
+        let mut topleft = (
+            self.paddingtop + self.style.border,
+            self.paddingleft + self.style.border,
+        ); // virtual screen
         let mut last_cursor = (
-            self.content_height + extra.1 - 1,
-            self.content_width + extra.0 - 1,
+            self.content_height + self.extray - (self.style.border * 2) - 1, // do not consider the borderwidth in the lastcursor of this window
+            self.content_width + self.extrax - (self.style.border * 2) - 1,
         );
         // do not consider the padding along the direction
 
@@ -585,12 +602,14 @@ impl IView {
                     // then we need to render this window itself
                     // so background must be updated
                     wbkgd(*win, ' ' as u32);
-                    box_(*win, 0, 0);
+                    if self.style.border > 0 {
+                        box_(*win, 0, 0);
+                    }
                 }
 
                 let scroll_end_cursor = (
-                    self.scrolly + self.content_height + extra.1,
-                    self.scrollx + self.content_width + extra.0,
+                    self.scrolly + self.content_height + self.extray,
+                    self.scrollx + self.content_width + self.extrax,
                 );
 
                 // loop over the children
@@ -637,10 +656,10 @@ impl IView {
                         *win,
                         render_box.toplefty,
                         render_box.topleftx,
-                        curr_box.toplefty,
-                        curr_box.topleftx,
-                        curr_box.bottomrighty,
-                        curr_box.bottomrightx,
+                        curr_box.toplefty + self.style.border,
+                        curr_box.topleftx + self.style.border,
+                        curr_box.bottomrighty + self.style.border,
+                        curr_box.bottomrightx + self.style.border,
                         0,
                     );
 
@@ -661,27 +680,43 @@ impl IView {
                 win = win_t;
 
                 if self.style.render {
+                    wbkgd(*win, ' ' as u32);
+                    let pad = newpad(self.children_height, self.children_width);
+
                     // then we need to render this window itself
                     // so background must be updated
-                    wbkgd(*win, ' ' as u32);
+                    wbkgd(pad, ' ' as u32);
+
                     // display the text at curootrrent top and left
-                    let res = mvwprintw(*win, topleft.0, topleft.1, &txt);
+                    let res = mvwprintw(pad, 0, 0, &txt);
                     if let Err(_) = res {
                         println!("Warning: NULL Error while rendering Text View");
                     };
+
+                    copywin(
+                        pad,
+                        *win,
+                        self.scrolly,
+                        self.scrollx,
+                        topleft.0,
+                        topleft.1,
+                        last_cursor.0 - self.paddingbottom + self.style.border,
+                        last_cursor.1 - self.paddingright + self.style.border,
+                        0,
+                    );
+
+                    delwin(pad);
+                    // wrefresh(*win);
                 }
             }
         }
 
-        // apply the border;
         if self.style.render {
             curr_render_box.toplefty = 0;
             curr_render_box.topleftx = 0;
-            curr_render_box.bottomrighty = (self.content_height + extra.0 - 1).max(0);
-            curr_render_box.bottomrightx = (self.content_width + extra.1 - 1).max(0);
+            curr_render_box.bottomrighty = (self.content_height + self.extray - 1).max(0);
+            curr_render_box.bottomrightx = (self.content_width + self.extrax - 1).max(0);
         }
-
-        // println!("{:?} {:?}", win, curr_render_box);
 
         (curr_render_box, *win)
     }
@@ -741,24 +776,13 @@ impl IView {
                 } else if mevent.bstate & BUTTON5_PRESSED as u32 > 0 {
                     if mevent.bstate & BUTTON_SHIFT as u32 > 0 {
                         // scroll left
-                        if self.scrollx
-                        < self.children_width
-                        - self.content_width
-                        - self.paddingleft
-                        - self.paddingright
-                        {
+                        if self.scrollx < self.children_width - self.content_width - self.extrax {
                             self.scrollx += 1;
                             self.style.render = true;
                         }
                     } else {
-
                         // scroll up
-                        if self.scrolly
-                        < self.children_height
-                        - self.content_height
-                        - self.paddingbottom
-                        - self.paddingtop
-                        {
+                        if self.scrolly < self.children_height - self.content_height - self.extray {
                             self.scrolly += 1;
                             self.style.render = true;
                         }
