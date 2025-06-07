@@ -112,14 +112,14 @@ impl<'a> CSSStyle<'a> {
             style.paddingtop = take(&mut dimens[0]);
             style.paddingbottom = take(&mut dimens[1]);
             style.paddingleft = take(&mut dimens[2]);
-            style.paddingright = take(&mut dimens[4]);
+            style.paddingright = take(&mut dimens[3]);
         }
         if !self.margin.is_empty() {
             let mut dimens = parse_multi_dimens(self.margin);
             style.margintop = take(&mut dimens[0]);
             style.marginbottom = take(&mut dimens[1]);
             style.marginleft = take(&mut dimens[2]);
-            style.marginright = take(&mut dimens[4]);
+            style.marginright = take(&mut dimens[3]);
         }
         if !self.z_index.is_empty() {
             style.z_index = self.z_index.parse().expect("Invalid z-index");

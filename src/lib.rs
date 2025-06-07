@@ -639,7 +639,6 @@ fn handle_events(root: Arc<Mutex<IView>>) -> bool {
                 event.clientx = mevent.x;
                 event.clienty = mevent.y;
 
-                println!("{:?}", mevent.bstate & BUTTON4_PRESSED as u32);
                 root.lock().unwrap().__handle_mouse_event__(&mut event);
             }
         }
