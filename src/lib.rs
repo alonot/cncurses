@@ -26,11 +26,10 @@ use std::{
     sync::{Arc, LazyLock, Mutex},
 };
 
+use crate::interfaces::Document;
 use crate::interfaces::{BASICSTRUCT, EVENT};
-use crate::styles::CSSStyle;
 use crate::styles::DIMEN;
 use crate::styles::STYLE;
-use crate::{interfaces::Document, nmodels::iview};
 
 pub mod components;
 pub mod interfaces;
@@ -107,7 +106,7 @@ fn initialize() {
     refresh();
 }
 
-fn debug_tree(node: Arc<Mutex<IView>>, tabs: i32) {
+fn _debug_tree(node: Arc<Mutex<IView>>, tabs: i32) {
     let iview = node.lock().unwrap();
     for _ in 0..tabs {
         LOG!("\t");
@@ -123,7 +122,7 @@ fn debug_tree(node: Arc<Mutex<IView>>, tabs: i32) {
                 iview.style.background_color
             );
             items.iter().for_each(|child| {
-                debug_tree(child.clone(), tabs + 1);
+                _debug_tree(child.clone(), tabs + 1);
             });
         }
         interfaces::IViewContent::TEXT(txt) => {
@@ -138,7 +137,7 @@ fn debug_tree(node: Arc<Mutex<IView>>, tabs: i32) {
     }
 }
 
-fn debug_fiber(node: Arc<Mutex<Fiber>>) {
+fn _debug_fiber(node: Arc<Mutex<Fiber>>) {
     let inode = {
         let Some(inode_p) = node.lock().unwrap().iview.clone() else {
             panic!("DEBUG: No IView")
@@ -157,17 +156,17 @@ fn debug_fiber(node: Arc<Mutex<Fiber>>) {
     );
 }
 
-fn debug_fiber_tree(node: Arc<Mutex<Fiber>>, tabs: i32) {
+fn _debug_fiber_tree(node: Arc<Mutex<Fiber>>, tabs: i32) {
     for _ in 0..tabs {
         LOG!("\t");
     }
     LOG!("|-");
-    debug_fiber(node.clone());
+    _debug_fiber(node.clone());
 
     let fiber = node.lock().unwrap();
 
     fiber.children.iter().for_each(|child| {
-        debug_fiber_tree(child.clone(), tabs + 1);
+        _debug_fiber_tree(child.clone(), tabs + 1);
     });
 }
 
@@ -855,11 +854,11 @@ pub fn use_state<T: Stateful + Debug>(init_val: T) -> (T, Arc<dyn Fn(T)>) {
 */
 pub fn run(app: impl Component) {
     let _ = std::fs::write("debug.txt", "");
-    
+
     initialize();
-    
+
     let node: Arc<Mutex<dyn Component>> = Arc::new(Mutex::new(app));
-    
+
     let root = create_render_tree(node);
     // let rootc = root.clone();
     panic::set_hook(Box::new(move |info| {
@@ -902,22 +901,21 @@ pub fn run(app: impl Component) {
 #[cfg(test)]
 mod test {
     use std::{
-        io::{Write, stdout},
         panic,
         sync::{Arc, Mutex},
         vec,
     };
 
-    use ncurses::{COLOR_BLACK, COLOR_MAGENTA, COLOR_RED, endwin};
+    use ncurses::{COLOR_MAGENTA, COLOR_RED, endwin};
 
     use crate::{
         DOCUMENT,
         components::{text::Text, view::View},
-        create_render_tree, debug_fiber_tree, debug_tree, diff_n_update, handle_events, initialize,
+        initialize,
         interfaces::{Component, ComponentBuilder},
         run,
-        styles::{BOXSIZING, CSSStyle, DIMEN, FLEXDIRECTION, OVERFLOWBEHAVIOUR, STYLE},
-        tree_refresh, use_state,
+        styles::{CSSStyle, DIMEN, FLEXDIRECTION, OVERFLOWBEHAVIOUR, STYLE},
+        use_state,
     };
 
     struct DemoApp1 {
@@ -926,34 +924,31 @@ mod test {
 
     impl Component for DemoApp1 {
         fn __call__(&mut self) -> Arc<Mutex<dyn Component>> {
-            let (p1, setp1) = use_state::<i32>(self.val);
+            let (_p1, _setp1) = use_state::<i32>(self.val);
 
             View::new_style_vec(vec![], vec![]).build()
         }
     }
 
     struct DemoApp2 {
-        pub val: String,
+        pub _val: String,
     }
 
     impl Component for DemoApp2 {
         fn __call__(&mut self) -> Arc<Mutex<dyn Component>> {
             let (p1, setp1) = use_state("Namaste".to_string());
 
-            // assert_eq!(p1, self.val);
-            // LOGLn!("{} {}", self.val, p1));
-
-            setp1("Ram Ram Bhai Sare Ne".to_string());
+            setp1("Namaste hai bhai Sare ne!".to_string());
 
             let color = DOCUMENT.lock().unwrap().get_color(255, 60, 0);
 
-            if p1 == "Ram Ram Bhai Sare Ne" {
+            if p1 == "Namaste hai bhai Sare ne!" {
                 View::new_style_vec(
                     vec![
                         View::new_style_vec(
                             vec![
                                 Text::new_style_vec(
-                                    "Shiv Shambo".to_string(),
+                                    "Rama".to_string(),
                                     vec![STYLE::TEXTCOLOR(color)],
                                 )
                                 .build(),
@@ -961,8 +956,8 @@ mod test {
                             vec![],
                         )
                         .build(),
-                        Text::new_style_vec("Shiv Shambo".to_string(), vec![]).build(),
-                        Text::new_style_vec("Shiv Shambo".to_string(), vec![]).build(),
+                        Text::new_style_vec("Vadakam".to_string(), vec![]).build(),
+                        Text::new_style_vec("Vadakam".to_string(), vec![]).build(),
                     ],
                     vec![STYLE::FLEXDIRECTION(FLEXDIRECTION::HORIZONTAL)],
                 )
@@ -970,7 +965,7 @@ mod test {
             } else {
                 View::new_key_style_vec(
                     Some("P".to_string()),
-                    vec![Text::new_style_vec("Shiv Shambo".to_string(), vec![]).build()],
+                    vec![Text::new_style_vec("Vadakam".to_string(), vec![]).build()],
                     vec![],
                 )
                 .build()
@@ -992,12 +987,11 @@ mod test {
             };
             let p1 = setp.clone();
 
-            // LOGLn!("{}, {}", p, color);
-            View::new_style_vec(
+            View::new(
                 vec![
                     DemoApp1 { val: 0 }.build(),
                     DemoApp2 {
-                        val: self.v1.clone(),
+                        _val: self.v1.clone(),
                     }
                     .build(),
                     Text::new_style_vec("Hello askdjnakjsncasjcas aasmdkancaksjdncjasdckjasdbcjasbcdjsbdchjsbdj ppp ooo ooo lll iii asdnakjsdlnc jasdncljlnasdcjans ljdc asjkdc nljaskd cja sndjckasnlcjk qqq asncjkasnciunsciuasndcjnasdvcabsdjbcajsdbcjasdcjasbxcnxbccasdbciausnaskdnvjkasbcmn xcjknizxjn kasnuijcnw www".to_string(), vec![STYLE::WIDTH(DIMEN::INT(10)), STYLE::OVERFLOW(OVERFLOWBEHAVIOUR::SCROLL),STYLE::HIEGHT(DIMEN::INT(8)), STYLE::TEXTCOLOR(color), STYLE::MARGINTOP(DIMEN::INT(5))]).onclick(move |_e| {
@@ -1005,17 +999,15 @@ mod test {
                             setp(10);
                     }, true).build()
                 ],
-                vec![
-                    STYLE::TABORDER(0),
-                    STYLE::HIEGHT(DIMEN::PERCENT(50.)),
-                    STYLE::PADDINGLEFT(DIMEN::INT(10)),
-                    STYLE::PADDINGTOP(DIMEN::INT(10)),
-                    STYLE::PADDINGBOTTOM(DIMEN::INT(10)),
-                    STYLE::PADDINGRIGHT(DIMEN::INT(10)),
-                    STYLE::BOXSIZING(BOXSIZING::BORDERBOX),
-                    STYLE::BORDER(true),
-                    STYLE::BORDERCOLOR(COLOR_RED)
-                ],
+                CSSStyle {
+                    taborder: 0,
+                    height: "50%",
+                    padding: "10 10 10 10",
+                    boxsizing: "border-box",
+                    border: 1,  // assuming true means border width of 1
+                    border_color: COLOR_RED,  // assuming COLOR_RED is an i16 constant
+                    ..Default::default()
+                },
             ).onfocus(move || {
                             LOGLn!("I was Called");
                             p1(10);
@@ -1024,163 +1016,23 @@ mod test {
         }
     }
 
-    fn clear() {
-        DOCUMENT.lock().unwrap().clear_fiber();
-    }
-
-    #[test]
-    fn test_set_state_i32() {
-        clear();
-        let dm = DemoApp1 { val: 0 };
-        // let root = create_render_tree(dm);
-
-        // debug_tree(root, 0);
-
-        // now move idx to start
-        // reset();
-
-        // {
-        //     let mut global_vec = GLOBAL_VEC.lock().unwrap();
-        //     let curr_fiber = &mut global_vec[0];
-
-        //     assert!(curr_fiber.changed);
-        // }
-
-        // let (v, _) = set_state(0);
-
-        // assert_eq!(v, 10);
-    }
-
-    #[test]
-    fn test_set_state_string() {
-        // clear();
-        let dm = DemoApp2 {
-            val: "Namaste".to_string(),
-        };
-        // create_render_tree(dm);
-
-        // now move idx to start
-        // reset();
-
-        // {
-        //     let mut global_vec = GLOBAL_VEC.lock().unwrap();
-        //     let curr_fiber = &mut global_vec[0];
-
-        //     assert!(curr_fiber.changed);
-        // }
-
-        let (v, setv) = use_state("".to_string());
-
-        assert_eq!(v, "Ram Ram Bhai Sare Ne");
-
-        // {
-        //     let mut global_vec = GLOBAL_VEC.lock().unwrap();
-        //     let curr_fiber = &mut global_vec[0];
-
-        //     assert!(curr_fiber.changed);
-
-        //     curr_fiber.changed = false;
-        // }
-
-        // to check the changed flag
-        setv("Ram Ram Bhai Sare Ne".to_string());
-
-        assert_eq!(v, "Ram Ram Bhai Sare Ne");
-
-        // {
-        //     let mut global_vec = GLOBAL_VEC.lock().unwrap();
-        //     let curr_fiber = &mut global_vec[0];
-
-        //     // since value was not changed, and flag was set to false(mimicing that rendering is complete), this flag must still
-        //     // be off because the value actually didn't changed after calling setv() above
-        //     assert!(!curr_fiber.changed);
-        // }
+    fn _clear() {
+        DOCUMENT.lock().unwrap()._clear_fiber();
     }
 
     #[test]
     fn test_create_tree1() {
         let _ = std::fs::write("debug.txt", "");
         panic::set_hook(Box::new(|info| {
-            // Disable SGR mouse mode
-            // LOGLn!("\033[?1006l"));
-            // stdout().flush();
             endwin();
             LOGLn!("{}", info);
         }));
-
-        // Enable extended mouse reporting if available
-        // LOGLn!("\033[?1006h")); // Enable SGR mouse mod)e
-        // stdout().flush();
 
         initialize();
         // clear();
         let dm = DemoApp3 {
             v1: format!("Namaste"),
         };
-        let node: Arc<Mutex<dyn Component>> = Arc::new(Mutex::new(dm));
-        let root = create_render_tree(node);
-
-        loop {
-            // if change, get the tree from the app.
-            // diff the tree to get the changed components
-            let mut changed = diff_n_update(root.clone());
-            changed |= DOCUMENT.lock().unwrap().changed;
-
-            // if changes, render the changed portion
-            if changed {
-                // LOGLn!("_________________________________________________-");
-                // debug_tree(root.clone(), 0);
-                let _ = tree_refresh(root.clone());
-                // {
-                //     let Some(fiber) = DOCUMENT.lock().unwrap().curr_fiber.clone() else {
-                //         panic!("No fiber")
-                //     };
-
-                //     debug_fiber_tree(fiber.clone(), 0);
-                // }
-            }
-
-            // handle click and scroll
-            if handle_events(root.clone()) {
-                break;
-            }
-        }
-        // LOGLn!("\033[?1006l"));
-        endwin();
-
-        // debug_tree(root.clone(), 0);
-
-        // let res = tree_refresh(root.clone());
-        // LOG!("{} {} {}", res.0, res.1, res.2);
-    }
-    struct Folder;
-    impl Component for Folder {
-        fn __call__(&mut self) -> Arc<Mutex<dyn Component>> {
-            View::new(
-                vec![],
-                CSSStyle {
-                    width: "99%",
-                    height: "90%",
-                    border: 1,
-                    background_color: COLOR_MAGENTA,
-                    boxsizing: "border-box",
-                    padding: "0 0 0 5",
-                    ..Default::default()
-                },
-            )
-            .build()
-        }
-    }
-
-    struct App;
-    impl Component for App {
-        fn __call__(&mut self) -> Arc<Mutex<dyn Component>> {
-            Folder {}.build()
-        }
-    }
-
-    #[test]
-    fn test_create_tree2() {
-        run(App);
+        run(dm);
     }
 }

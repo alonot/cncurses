@@ -9,7 +9,7 @@ use ncurses::{
     MENU, MEVENT, PANEL, WINDOW, init_pair, newwin,
 };
 
-use crate::{nmodels::iview::IView, LOGLn};
+use crate::{nmodels::iview::IView};
 
 pub trait Stateful: DynClone + Any + Send {
     fn as_any(&self) -> &dyn Any;
@@ -41,8 +41,8 @@ impl Default for IViewContent {
 }
 
 pub(crate) struct MENUSTRUCT {
-    menu: MENU,
-    win: WINDOW,
+    _menu: MENU,
+    _win: WINDOW,
 }
 
 /**
@@ -50,8 +50,8 @@ pub(crate) struct MENUSTRUCT {
  */
 pub(crate) enum BASICSTRUCT {
     WIN(WINDOW),
-    PANEL(PANEL),
-    MENU(MENUSTRUCT),
+    _PANEL(PANEL),
+    _MENU(MENUSTRUCT),
 }
 
 unsafe impl Send for BASICSTRUCT {}
@@ -197,7 +197,7 @@ pub struct Document {
 
 impl Document {
     /**Using in testing only */
-    pub(crate) fn clear_fiber(&mut self) {
+    pub(crate) fn _clear_fiber(&mut self) {
         self.curr_fiber = None;
     }
 
@@ -313,7 +313,7 @@ impl Document {
         if let Some(idx) = self
         .taborder
         .iter()
-        .position(|ielement| ielement.id == self.next_tab_id)
+        .position(|ielement| ielement.id == *id)
         {
             self.taborder.remove(idx);
             if self.tabindex > idx  {
@@ -327,7 +327,7 @@ impl Document {
     /**returns the id of previous tab element
      * -1 if none. 
      */
-    pub(crate) fn clear_tab_order(&mut self) -> i32 {
+    pub(crate) fn _clear_tab_order(&mut self) -> i32 {
         let mut prev_id = -1;
         if let Some(prev_iview_lk) = self.focused_element() {
             prev_id = prev_iview_lk.lock().unwrap().id;

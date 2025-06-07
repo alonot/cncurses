@@ -3,7 +3,7 @@
  */
 
 use std::{
-    cmp::{max, min},
+    cmp::max,
     i32::MAX,
     sync::{Arc, Mutex},
 };
@@ -17,7 +17,7 @@ use ncurses::{
 use crate::{
     interfaces::{Component, IViewContent, BASICSTRUCT, EVENT}, styles::{
         CSSStyle, Style, BOXSIZING, DIMEN, FIT_CONTENT, FLEXDIRECTION, OVERFLOWBEHAVIOUR, POSITION, STYLE
-    }, LOGLn, DOCUMENT, LOG, REMOVEINDEX
+    }, LOGLn, DOCUMENT, REMOVEINDEX
 };
 
 #[derive(Debug)]
@@ -146,7 +146,7 @@ impl IView {
         }
     }
     /**Uses DOCUMENT lock() */
-    pub(crate) fn new_with_styles(styles: Vec<STYLE>) -> IView {
+    pub(crate) fn _new_with_styles(styles: Vec<STYLE>) -> IView {
         let mut iview = IView::new();
         iview.style = Style::from_style(styles);
         iview
@@ -453,10 +453,10 @@ impl IView {
                 BASICSTRUCT::WIN(win) => {
                     delwin(*win);
                 }
-                BASICSTRUCT::PANEL(_) => {
+                BASICSTRUCT::_PANEL(_) => {
                     todo!()
                 }
-                BASICSTRUCT::MENU(_) => {
+                BASICSTRUCT::_MENU(_) => {
                     todo!()
                 }
             }
@@ -1186,7 +1186,7 @@ impl IView {
                     }
                 });
             }
-            IViewContent::TEXT(txt) => {}
+            IViewContent::TEXT(_) => {}
         }
     }
 

@@ -4,10 +4,10 @@ use std::{
 };
 
 use ncurses::{
-    BUTTON1_PRESSED, BUTTON3_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, KEY_BTAB, endwin,
+    BUTTON1_PRESSED, BUTTON3_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, endwin,
 };
 
-use crate::{LOGLn, interfaces::EVENT};
+use crate::interfaces::EVENT;
 
 pub struct CSSStyle<'a> {
     pub padding: &'a str,
