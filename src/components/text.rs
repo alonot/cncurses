@@ -51,7 +51,10 @@ impl Text {
             base_component: iview.build()
         }
     }
-    pub fn onclick<T: FnMut(&mut EVENT) + Send + 'static>(self, onclick: T, capture:bool) -> Self {
+    pub fn is_focused(&self) -> bool {
+        self.base_component.lock().unwrap().focused
+    }
+    pub fn onclick<T: FnMut(&mut EVENT) + 'static>(self, onclick: T, capture:bool) -> Self {
         if capture {
             self.base_component.lock().unwrap().style.onclick_capture = Some(Arc::new(Mutex::new(onclick)));
         } else {
@@ -59,12 +62,20 @@ impl Text {
         }
         self
     }
-    pub fn onscroll<S: FnMut(&mut EVENT) + Send + 'static>(self, onscroll: S, capture:bool) -> Self {
+    pub fn onscroll<S: FnMut(&mut EVENT) + 'static>(self, onscroll: S, capture:bool) -> Self {
         if capture {
             self.base_component.lock().unwrap().style.onscroll_capture = Some(Arc::new(Mutex::new(onscroll)));
         } else {   
             self.base_component.lock().unwrap().style.onscroll_bubble = Some(Arc::new(Mutex::new(onscroll)));
         }
+        self
+    }
+    pub fn onfocus<T: FnMut() + 'static>(self, onfocus: T) -> Self {
+        self.base_component.lock().unwrap().style.onfocus = Some(Arc::new(Mutex::new(onfocus)));
+        self
+    }
+    pub fn onunfocus<S: FnMut() + 'static>(self, onunfocus: S) -> Self {
+        self.base_component.lock().unwrap().style.onunfocus = Some(Arc::new(Mutex::new(onunfocus)));
         self
     }
 }

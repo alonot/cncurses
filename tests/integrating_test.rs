@@ -1,9 +1,9 @@
 use std::{sync::{Arc, Mutex}};
 
-use cncurses::{components::{button::Button, text::Text, view::View}, interfaces::{Component, ComponentBuilder}, run};
+use cncurses::{components::{ text::Text, view::View}, interfaces::{Component, ComponentBuilder}, run};
 
 struct P {
-    i : i32
+    _i : i32
 }
 impl Component for P {
     fn __call__(&mut self) -> Arc<Mutex<(dyn Component + 'static)>> {
@@ -15,13 +15,13 @@ impl Component for P {
 fn main() {
     let p = Text::new_style_vec("Hwll".to_string(), vec![]).build();   
 
-    let mut t = 10;
+    let mut _t = 10;
 
-    let v = View::new_style_vec(vec![p], vec![]).onclick(|e| {}, true).onscroll(
-        move |e| {
-            t +=1;
+    let _v = View::new_style_vec(vec![p], vec![]).onclick(|_e| {}, true).onscroll(
+        move |_e| {
+            _t +=1;
         }, false
     );
 
-    run(P{i:10});
+    run(P{_i:10});
 }

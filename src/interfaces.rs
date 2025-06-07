@@ -1,20 +1,15 @@
 use std::{
     any::Any,
-    cell::RefCell,
-    clone,
     collections::HashMap,
-    mem::take,
-    rc::Rc,
     sync::{Arc, LazyLock, Mutex},
 };
 
 use dyn_clone::DynClone;
 use ncurses::{
-    BUTTON1_PRESSED, BUTTON3_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, COLOR_BLACK, COLOR_WHITE,
-    MENU, MEVENT, PANEL, WINDOW, endwin, init_color, init_pair, newwin,
+    MENU, MEVENT, PANEL, WINDOW, init_pair, newwin,
 };
 
-use crate::nmodels::IView::IView;
+use crate::{nmodels::iview::IView, LOGLn};
 
 pub trait Stateful: DynClone + Any + Send {
     fn as_any(&self) -> &dyn Any;
@@ -102,7 +97,7 @@ impl EVENT {
     pub(crate) fn new(ch: i32) -> EVENT {
         EVENT {
             mevent: None,
-            key: 0,
+            key: ch,
             clientx: 0,
             clienty: 0,
             propogate: true,
@@ -110,17 +105,17 @@ impl EVENT {
         }
     }
 
-    pub fn get_mevent(&mut self) -> &Option<MEVENT> {
+    pub fn get_mevent(& self) -> &Option<MEVENT> {
         &self.mevent
     }
 
-    pub fn get_key(&mut self) -> i32 {
+    pub fn get_key(& self) -> i32 {
         self.key
     }
-    pub fn get_clientx(&mut self) -> i32 {
+    pub fn get_clientx(& self) -> i32 {
         self.clientx
     }
-    pub fn get_clienty(&mut self) -> i32 {
+    pub fn get_clienty(& self) -> i32 {
         self.clienty
     }
 
@@ -181,6 +176,12 @@ pub struct Document {
     pub(crate) taborder: Vec<TabElement>,
     pub(crate) tabindex: usize,
     pub(crate) unique_id: i32,
+    pub(crate) curr_active: Option<Arc<Mutex<IView>>>,
+
+    /** If any iview calls focus then this is set to its id. used by focus */
+    pub(crate) next_tab_id: i32,
+
+
     pub(crate) color_pairs: LazyLock<Mutex<HashMap<(i16, i16), u16>>>,
     // pub(crate) colors: LazyLock<Mutex<HashMap<(i16, i16, i16), u16>>>,
     pub(crate) total_allowed_pairs: i32,
@@ -188,14 +189,24 @@ pub struct Document {
     // pub(crate) curr_color: u16,
     /** Used when color_pairs goes above limit(COLOR_PAIRS) */
     pub(crate) curr_color_pair: u16,
+
     /** Used when colors goes above limit(COLORS) */
     /** turned true if some changed happen to any IView. (This may occur even though there was no state change in Fiber. Eg of such events. Scroll, Focus) */
     pub(crate) changed: bool,
 }
 
 impl Document {
+    /**Using in testing only */
     pub(crate) fn clear_fiber(&mut self) {
         self.curr_fiber = None;
+    }
+
+    pub(crate) fn set_active(&mut self, iview: Arc<Mutex<IView>>) {
+        self.curr_active = Some(iview);
+    }
+
+    pub(crate) fn clear_active(&mut self) {
+        self.curr_active = None;
     }
 
     /**
@@ -303,27 +314,37 @@ impl Document {
         self.taborder.clear();
     }
 
-    pub(crate) fn advance_tab(&mut self) {
-        self.tabindex += 1;
-        if self.tabindex >= self.taborder.len() {
-            self.tabindex = 0;
+    /**Locks the iview */
+    pub(crate) fn advance_tab(&mut self) -> (Option<Arc<Mutex<IView>>>, Option<Arc<Mutex<IView>>>){
+        let prev_iview_lk = self.focused_element();
+        if self.next_tab_id != -1 {
+            self.focus()
+        } else {
+            self.tabindex += 1;
+            if self.tabindex >= self.taborder.len() {
+                self.tabindex = 0;
+            }
+            (prev_iview_lk, self.focused_element())
         }
     }
-
-    pub(crate) fn focus(&mut self, element_id: i32) {
+    
+    pub(crate) fn focus(&mut self) -> (Option<Arc<Mutex<IView>>>, Option<Arc<Mutex<IView>>>) {
+        let prev_iview_lk = self.focused_element();
         if let Some(idx) = self
-            .taborder
-            .iter()
-            .position(|ielement| ielement.id == element_id)
+        .taborder
+        .iter()
+        .position(|ielement| ielement.id == self.next_tab_id)
         {
             self.tabindex = idx;
         };
+        self.next_tab_id = -1;
+        (prev_iview_lk, self.focused_element())
     }
 
     /**
      * May Overflow
      */
-    pub(crate) fn active_element(&self) -> Option<Arc<Mutex<IView>>> {
+    pub(crate) fn focused_element(&self) -> Option<Arc<Mutex<IView>>> {
         if self.taborder.is_empty() {
             return None;
         }

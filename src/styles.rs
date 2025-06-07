@@ -1,29 +1,29 @@
 use std::{
-    mem::take, num::{ParseFloatError, ParseIntError}, sync::{Arc, Mutex}
+    mem::take, sync::{Arc, Mutex}
 };
 
-use ncurses::{BUTTON1_PRESSED, BUTTON3_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, endwin};
+use ncurses::{endwin, BUTTON1_PRESSED, BUTTON3_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, KEY_BTAB};
 
-use crate::interfaces::EVENT;
+use crate::{interfaces::EVENT, LOGLn};
 
 #[derive(Default)]
 pub struct CSSStyle<'a> {
     pub padding: &'a str,
     pub margin: &'a str,
-    pub background_color: &'a str,
-    pub color: &'a str,
-    pub flex: &'a str,
+    pub background_color: i16,
+    pub color: i16,
+    pub flex: u32,
     pub flex_direction: &'a str,
-    pub taborder: &'a str,
-    pub border_color: &'a str,
+    pub taborder: i32,
+    pub border_color: i16,
     pub boxsizing: &'a str,
-    pub border: &'a str,
+    pub border: i32,
     pub top: &'a str,
     pub left: &'a str,
     pub height: &'a str,
     pub width: &'a str,
     pub scroll: &'a str,
-    pub z_index: &'a str,
+    pub z_index: i32,
 }
 
 fn parse_dimension<'a>(mut d: &'a str) -> DIMEN {
@@ -36,9 +36,9 @@ fn parse_dimension<'a>(mut d: &'a str) -> DIMEN {
         }
     };
     if let Some(p) = percen {
-        return DIMEN::PERCENT(p);
+        return DIMEN::PERCENT(p / 100.);
     } else {
-        return { DIMEN::INT(d.parse::<i32>().expect("Invalid Dimension")) };
+        return  DIMEN::INT(d.parse::<i32>().expect("Invalid Dimension")) ;
     }
 }
 
@@ -53,12 +53,13 @@ fn parse_multi_dimens<'a>(mut d: &'a str) -> [DIMEN; 4] {
         .unwrap_or_else(|v: Vec<DIMEN>| panic!("Expected 4 dimens: {}", v.len()))
 }
 
-fn parse_flex_direction<'a>(mut d: &'a str) -> FLEXDIRECTION {
-    match d {
+fn parse_flex_direction<'a>(d: &'a str) -> FLEXDIRECTION {
+    match d.trim() {
         "vertical" => {
             FLEXDIRECTION::VERTICAL
         },
         "horizontal" => {
+            LOGLn!("h");
             FLEXDIRECTION::HORIZONTAL
         },
         _ => {
@@ -67,8 +68,8 @@ fn parse_flex_direction<'a>(mut d: &'a str) -> FLEXDIRECTION {
     }
 }
 
-fn parse_overflow<'a>(mut d: &'a str) -> OVERFLOWBEHAVIOUR {
-    match d {
+fn parse_overflow<'a>(d: &'a str) -> OVERFLOWBEHAVIOUR {
+    match d.trim() {
         "scroll" => {
             OVERFLOWBEHAVIOUR::SCROLL
         },
@@ -84,8 +85,8 @@ fn parse_overflow<'a>(mut d: &'a str) -> OVERFLOWBEHAVIOUR {
     }
 }
 
-fn parse_box_sizing<'a>(mut d: &'a str) -> BOXSIZING {
-    match d {
+fn parse_box_sizing<'a>(d: &'a str) -> BOXSIZING {
+    match d.trim() {
         "border-box" => {
             BOXSIZING::BORDERBOX
         },
@@ -121,21 +122,12 @@ impl<'a> CSSStyle<'a> {
             style.marginleft = take(&mut dimens[2]);
             style.marginright = take(&mut dimens[3]);
         }
-        if !self.z_index.is_empty() {
-            style.z_index = self.z_index.parse().expect("Invalid z-index");
-        }
-        if !self.background_color.is_empty() {
-            style.background_color = self.background_color.parse().expect("Invalid background_color");
-        }
-        if !self.border.is_empty() {
-            style.border = self.border.parse().expect("Invalid border");
-        }
-        if !self.border_color.is_empty() {
-            style.border_color = self.border_color.parse().expect("Invalid border_color");
-        }
-        if !self.flex.is_empty() {
-            style.flex = self.flex.parse().expect("Invalid flex");
-        }
+        style.z_index = self.z_index;
+        style.background_color = self.background_color;
+        style.border = self.border;
+        style.border_color = self.border_color;
+        style.flex = self.flex;
+        style.taborder = self.taborder;
         if !self.flex_direction.is_empty() {
             style.flex_direction = parse_flex_direction(self.flex_direction);
         }
@@ -144,9 +136,6 @@ impl<'a> CSSStyle<'a> {
         }
         if !self.scroll.is_empty() {
             style.scroll = parse_overflow(self.scroll);
-        }
-        if !self.taborder.is_empty() {
-            style.taborder = self.taborder.parse().expect("Invalid taborder");
         }
         if !self.top.is_empty() {
             style.top = parse_dimension(self.top);
@@ -216,13 +205,17 @@ pub(crate) struct Style {
     pub(crate) flex: u32,
     pub(crate) flex_direction: FLEXDIRECTION,
     pub(crate) z_index: i32,
-    pub(crate) onclick_bubble: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + Send>>>, // should be a clousure
-    pub(crate) onscroll_bubble: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + Send>>>, // should be a clousure
-    pub(crate) onclick_capture: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + Send>>>, // should be a clousure
-    pub(crate) onscroll_capture: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + Send>>>, // should be a clousure
+    pub(crate) onclick_bubble: Option<Arc<Mutex<dyn FnMut(&mut EVENT)>>>, // should be a clousure
+    pub(crate) onscroll_bubble: Option<Arc<Mutex<dyn FnMut(&mut EVENT)>>>, // should be a clousure
+    pub(crate) onclick_capture: Option<Arc<Mutex<dyn FnMut(&mut EVENT)>>>, // should be a clousure
+    pub(crate) onscroll_capture: Option<Arc<Mutex<dyn FnMut(&mut EVENT)>>>, // should be a clousure
+    pub(crate) onfocus: Option<Arc<Mutex<dyn FnMut()>>>, // should be a clousure
+    pub(crate) onunfocus: Option<Arc<Mutex<dyn FnMut()>>>, // should be a clousure
     pub(crate) render: bool,
     pub(crate) scroll: OVERFLOWBEHAVIOUR,
 }
+
+unsafe impl Send for Style{}
 
 pub const FIT_CONTENT: i32 = -1;
 pub const MAX_CONTENT: i32 = -2;
@@ -255,6 +248,8 @@ impl Style {
             onscroll_bubble: None,
             onclick_capture: None,
             onscroll_capture: None,
+            onfocus: None,
+            onunfocus: None,
             render: true,
             scroll: OVERFLOWBEHAVIOUR::HIDDEN,
         }
@@ -302,7 +297,7 @@ impl Style {
      * true: stop_propogation
      */
     pub(crate) fn handle_event(&self, event: &mut EVENT, capture: bool) {
-        let mut fnc_opt: &Option<Arc<Mutex<dyn FnMut(&mut EVENT) + Send>>> = &None;
+        let mut fnc_opt: &Option<Arc<Mutex<dyn FnMut(&mut EVENT)>>> = &None;
 
         if let Some(mevent) = event.mevent {
             if mevent.bstate == BUTTON1_PRESSED as u32 || mevent.bstate == BUTTON3_PRESSED as u32 {
@@ -322,7 +317,10 @@ impl Style {
                     fnc_opt = &self.onscroll_bubble;
                 }
             }
-        } else if !capture { // TODO
+        } else if !capture { 
+            match event.key {
+                _ => {}
+            }
         }
 
         if let Some(fnc) = fnc_opt {
@@ -344,6 +342,7 @@ impl Default for OVERFLOWBEHAVIOUR {
     }
 }
 
+#[derive(Debug)]
 pub enum FLEXDIRECTION {
     VERTICAL,
     HORIZONTAL,

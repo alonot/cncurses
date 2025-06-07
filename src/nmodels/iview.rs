@@ -9,18 +9,15 @@ use std::{
 };
 
 use ncurses::{
-    BUTTON_SHIFT, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED,
-    COLOR_PAIR, WINDOW, box_,
-    copywin, delwin, mvwprintw, newpad, newwin, 
-    wattroff, wattron, wbkgd,
+    box_, copywin, delwin, mvwprintw, newpad, newwin, ungetch, wattroff, wattron, wbkgd, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, BUTTON_SHIFT, COLOR_PAIR, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_UP, WINDOW
 };
 
 use crate::{
-    interfaces::{
-        Component, IViewContent, BASICSTRUCT, EVENT
-    }, styles::{
-        CSSStyle, Style, BOXSIZING, DIMEN, FIT_CONTENT, FLEXDIRECTION, OVERFLOWBEHAVIOUR, STYLE
-    }, LOGLn, DOCUMENT
+    DOCUMENT, LOGLn,
+    interfaces::{BASICSTRUCT, Component, EVENT, IViewContent},
+    styles::{
+        BOXSIZING, CSSStyle, DIMEN, FIT_CONTENT, FLEXDIRECTION, OVERFLOWBEHAVIOUR, STYLE, Style,
+    },
 };
 
 #[derive(Debug)]
@@ -55,6 +52,8 @@ pub(crate) struct IView {
     pub(crate) parent: Option<Arc<Mutex<IView>>>,
     pub(crate) basic_struct: Option<BASICSTRUCT>,
     pub(crate) id: i32,
+    pub(crate) focused: bool,
+
     height: i32,
     width: i32,
     /** Only the dimen of content(without padding, border) */
@@ -101,6 +100,7 @@ impl IView {
             basic_struct: None,
             height: FIT_CONTENT,
             width: FIT_CONTENT,
+            focused: false,
             content_height: 0,
             content_width: 0,
             scrollx: 0,
@@ -145,7 +145,7 @@ impl IView {
         iview.children = children;
         iview
     }
-    
+
     /**Uses DOCUMENT lock() */
     pub(crate) fn with_style(
         styles: CSSStyle,
@@ -168,11 +168,6 @@ impl IView {
         Arc::new(Mutex::new(self))
     }
 
-    pub(crate) fn attach_parent(&mut self, parent: Arc<Mutex<IView>>) -> &Self {
-        self.parent = Some(parent);
-        self
-    }
-
     /**
      * For this the parent should not have dimension depending on child
      */
@@ -192,17 +187,15 @@ impl IView {
         match direction {
             FLEXDIRECTION::VERTICAL => {
                 // check for height
-                if !matches!(child.style.height, DIMEN::INT(_)) {
-                    let percent = (child.style.flex as f32) / (total_flex as f32);
-                    child.style.height = DIMEN::PERCENT(percent);
-                }
+                let percent = (child.style.flex as f32) / (total_flex as f32);
+                child.style.height = DIMEN::PERCENT(percent);
             }
             FLEXDIRECTION::HORIZONTAL => {
                 // check for width
-                if !matches!(child.style.width, DIMEN::INT(_)) {
-                    let percent = (child.style.flex as f32) / (total_flex as f32);
-                    child.style.width = DIMEN::PERCENT(percent);
-                }
+                let percent = (child.style.flex as f32) / (total_flex as f32);
+                child.style.width = DIMEN::PERCENT(percent);
+                //     if !matches!(child.style.width, DIMEN::INT(_)) {
+                // }
             }
         }
     }
@@ -411,10 +404,10 @@ impl IView {
                 BASICSTRUCT::WIN(win) => {
                     delwin(*win);
                 }
-                BASICSTRUCT::PANEL(panel) => {
+                BASICSTRUCT::PANEL(_) => {
                     todo!()
                 }
-                BASICSTRUCT::MENU(menustruct) => {
+                BASICSTRUCT::MENU(_) => {
                     todo!()
                 }
             }
@@ -424,13 +417,13 @@ impl IView {
     fn init_basic_struct(&mut self) {
         match &self.content {
             IViewContent::CHIDREN(_) => {
-                // LOG!(
+                // LOGLn!(
                 //     "{} {} {} {}",
                 //     self.content_height + self.extray,
                 //     self.content_width + self.extrax,
                 //     self.height,
                 //     self.width
-                // );
+                // ));
                 self.basic_struct = Some(BASICSTRUCT::WIN(newwin(
                     self.content_height + self.extray,
                     self.content_width + self.extrax,
@@ -438,14 +431,14 @@ impl IView {
                     0,
                 )));
             }
-            IViewContent::TEXT(txt) => {
+            IViewContent::TEXT(_) => {
                 // create a pad
                 // LOG!("{txt} {} {} {} {}", self.content_height + self.extray, self.content_width + self.extrax, self.height, self.width);
                 let win = newwin(
                     self.content_height + self.extray,
                     self.content_width + self.extrax,
-                    30,
-                    30,
+                    0,
+                    0,
                 );
                 self.basic_struct = Some(BASICSTRUCT::WIN(win));
             }
@@ -521,11 +514,13 @@ impl IView {
                 // similar for width
                 self.fill_box_infos();
                 if self.content_height != FIT_CONTENT {
-                    self.content_height -= self.paddingbottom + self.paddingtop;
+                    self.content_height -=
+                        self.paddingbottom + self.paddingtop + (self.style.border * 2);
                     self.content_height = self.content_height.max(0);
                 }
                 if self.content_width != FIT_CONTENT {
-                    self.content_width -= self.paddingleft + self.paddingright;
+                    self.content_width -=
+                        self.paddingleft + self.paddingright + (self.style.border * 2);
 
                     self.content_width = self.content_width.max(0);
                 }
@@ -561,7 +556,7 @@ impl IView {
 
             self.children_height = cheight + self.extray;
             self.children_width = cwidth + self.extrax;
-            // LOGLn!(format!(
+            // LOGLn!(
             //     "{} {} : {} {} {}",
             //     self.height, self.width, self.content_height, self.content_width ,self.style.render
             // ));
@@ -681,6 +676,7 @@ impl IView {
                     };
                     win_t
                 };
+                LOGLn!("{}", icomponents.len());
 
                 if self.style.render {
                     // then we need to render this window itself
@@ -703,8 +699,14 @@ impl IView {
                 icomponents.iter().for_each(|child_lk| {
                     // calls the render function of child if it's bounds are within the view port of this window
                     // gets the width covered by the child
-                    // LOG!("SEND {:p} {:?} {:?} {}", self, topleft, scroll_end_cursor ,self.content_height);
                     if topleft.0 >= scroll_end_cursor.0 || topleft.1 >= scroll_end_cursor.1 {
+                        LOGLn!(
+                            "SEND {:p} {:?} {:?} {}",
+                            self,
+                            topleft,
+                            scroll_end_cursor,
+                            self.content_height
+                        );
                         return;
                     }
 
@@ -729,6 +731,14 @@ impl IView {
                     };
 
                     if topleft.0 < self.scrolly || topleft.1 < self.scrollx {
+                        LOGLn!(
+                            "SEND {:p} {:?} {:?} {} {}",
+                            self,
+                            topleft,
+                            self.scrolly,
+                            self.scrollx,
+                            self.content_height
+                        );
                         // if visible is set true then its scrollx and scrolly will already be 0
                         return;
                     }
@@ -741,10 +751,13 @@ impl IView {
                         &last_cursor,
                         &margin,
                     );
-                    // LOGLn!(format!(
-                    //     "{:p}{:?} {:?} {:?}",
-                    //     self, render_box, curr_box, prevtopleft
-                    // ));
+                    LOGLn!(
+                        "{:p} {:?} {:?} {:?}",
+                        self,
+                        render_box,
+                        curr_box,
+                        prevtopleft
+                    );
 
                     // need to consider the flex direction
                     // place the child at current top and left position
@@ -792,9 +805,9 @@ impl IView {
                             .get_color_pair(self.style.color, self.style.background_color)
                     };
 
-                    // LOGLn!(format!("{} {}", txt, self.style.color));
+                    // LOGLn!("{} {}", txt, self.style.color));
 
-                    wbkgd(*win, (' ' as u32 | COLOR_PAIR(border_color)));
+                    wbkgd(*win, ' ' as u32 | COLOR_PAIR(border_color));
                     if self.style.border > 0 {
                         wattron(*win, COLOR_PAIR(border_color)); // setting border_pair
                         box_(*win, 0, 0);
@@ -804,7 +817,7 @@ impl IView {
 
                     // then we need to render this window itself
                     // so background must be updated
-                    wbkgd(pad, (' ' as u32 | COLOR_PAIR(border_color)));
+                    wbkgd(pad, ' ' as u32 | COLOR_PAIR(border_color));
 
                     wattron(pad, COLOR_PAIR(text_color)); // setting text_pair
                     // display the text at curootrrent top and left
@@ -842,6 +855,89 @@ impl IView {
         (curr_render_box, *win)
     }
 
+    pub(crate) fn handle_default(&mut self, event: &mut EVENT) {
+        let mut scroll_direction = -1;
+        let vertical = matches!(self.style.flex_direction, FLEXDIRECTION::VERTICAL);
+        if let Some(mevent) = &event.mevent {
+            if mevent.bstate & BUTTON1_PRESSED as u32 > 0 {
+                // left mouse clicked
+                if self.style.taborder >= 0 {
+
+                    // generate a tab event which will change focus and call handler itself
+                    DOCUMENT.lock().unwrap().next_tab_id = self.id;
+                    ungetch('\t' as i32);
+                    
+                }
+            } else if (mevent.bstate & BUTTON2_PRESSED as u32 == 0)
+                && matches!(self.style.scroll, OVERFLOWBEHAVIOUR::SCROLL)
+            {
+                if mevent.bstate & BUTTON4_PRESSED as u32 > 0 {
+                    if mevent.bstate & BUTTON_SHIFT as u32 > 0 {
+                        // scroll right
+                        scroll_direction = 3;
+                    } else {
+                        // scroll down
+                        scroll_direction = 1;
+                    }
+                } else if mevent.bstate & BUTTON5_PRESSED as u32 > 0 {
+                    if mevent.bstate & BUTTON_SHIFT as u32 > 0 {
+                        // scroll left
+                        scroll_direction = 2;
+                    } else {
+                        // scroll up
+                        scroll_direction = 0;
+                    }
+                }
+            }
+        } else {
+            match event.key {
+                // natural scrolling
+                KEY_UP => scroll_direction = 1,
+                KEY_RIGHT => scroll_direction = 2,
+                KEY_LEFT => scroll_direction = 2,
+                KEY_DOWN => scroll_direction = 0,
+                _ => {}
+            }
+        };
+        LOGLn!("{:p} {} {}", self,scroll_direction, vertical);
+        match scroll_direction {
+            0 => {
+                // scroll up
+                if vertical
+                    && self.scrolly < self.children_height - self.content_height - self.extray
+                {
+                    self.scrolly += 1;
+                    self.style.render = true;
+                }
+            }
+            1 => {
+                if vertical && self.scrolly > 0 {
+                    self.scrolly -= 1;
+                    self.style.render = true;
+                }
+            }
+            2 => {
+                if !vertical
+                    && self.scrollx < self.children_width - self.content_width - self.extrax
+                {
+                    self.scrollx += 1;
+                    self.style.render = true;
+                }
+            }
+            3 => {
+                // scroll right
+                if !vertical && self.scrollx > 0 {
+                    self.scrollx -= 1;
+                    self.style.render = true;
+                }
+            }
+            _ => {}
+        }
+        if self.style.render {
+            DOCUMENT.lock().unwrap().changed = true;
+        }
+    }
+
     /**
      * handles the given mouse event. Do not pass a non mouse event
      * returns whether to propogate bubbling or not
@@ -865,52 +961,12 @@ impl IView {
 
         let mut clientx = event.clientx - self.paddingleft;
         let mut clienty = event.clienty - self.paddingtop;
-        let direction = &self.style.flex_direction;
 
         if event.default {
-            let Some(mevent) = &event.mevent else {
-                panic!("Invalid Handler")
-            };
-            if mevent.bstate & BUTTON1_PRESSED as u32 > 0 {
-                // left mouse clicked
-                if self.style.taborder >= 0 {
-                    // make this the active element
-                    DOCUMENT.lock().unwrap().focus(self.id);
-                }
-            } else if (mevent.bstate & BUTTON2_PRESSED as u32 == 0)
-                && matches!(self.style.scroll, OVERFLOWBEHAVIOUR::SCROLL)
-            {
-                if mevent.bstate & BUTTON4_PRESSED as u32 > 0 {
-                    if mevent.bstate & BUTTON_SHIFT as u32 > 0 {
-                        // scroll right
-                        if self.scrollx > 0 {
-                            self.scrollx -= 1;
-                            self.style.render = true;
-                        }
-                    } else {
-                        // scroll down
-                        if self.scrolly > 0 {
-                            self.scrolly -= 1;
-                            self.style.render = true;
-                        }
-                    }
-                } else if mevent.bstate & BUTTON5_PRESSED as u32 > 0 {
-                    if mevent.bstate & BUTTON_SHIFT as u32 > 0 {
-                        // scroll left
-                        if self.scrollx < self.children_width - self.content_width - self.extrax {
-                            self.scrollx += 1;
-                            self.style.render = true;
-                        }
-                    } else {
-                        // scroll up
-                        if self.scrolly < self.children_height - self.content_height - self.extray {
-                            self.scrolly += 1;
-                            self.style.render = true;
-                        }
-                    }
-                }
-            }
+            self.handle_default(event);
         }
+
+        let direction = &self.style.flex_direction;
 
         if clientx >= 0 && clienty >= 0 {
             // else clicked on padding area
@@ -928,6 +984,10 @@ impl IView {
                                     // update the event obj
                                     event.clientx = clientx;
                                     event.clienty = clienty;
+                                    if matches!(child.style.scroll, OVERFLOWBEHAVIOUR::SCROLL){
+                                        LOGLn!("{:p}", &*child);
+                                        DOCUMENT.lock().unwrap().set_active(child_lk.clone());
+                                    }
                                     child.__handle_mouse_event__(event);
                                     break;
                                 }
@@ -937,7 +997,9 @@ impl IView {
                                 if clientx - cwidth < 0 {
                                     event.clientx = clientx;
                                     event.clienty = clienty;
-
+                                    if matches!(child.style.scroll, OVERFLOWBEHAVIOUR::SCROLL){
+                                        DOCUMENT.lock().unwrap().set_active(child_lk.clone());
+                                    }
                                     child.__handle_mouse_event__(event);
                                     break;
                                 }

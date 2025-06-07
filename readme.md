@@ -10,7 +10,12 @@ A Component Based Library for ncurses. The Library takes its inspiration from Fl
 
   
   
-  
+
+#### Scrolling with Keyboard
+
+- Whenever users clicks on any view the deepest child with overflow set to scroll becomes current `active` iview. 
+- On further interactions with keyboard UP, DOWN, RIGHT,LEFT, this currect `active` child's scroll behaviour is triggered.
+- When an elements comes into focus through tab, and it is scrollable then current `active` is set to that same element.
   
 
 ## Internals
@@ -35,6 +40,11 @@ IView: Internal View
   
 
 ```
+
+#### SetState
+
+- The closure returned by setState captures the current fiber reference and the hook(state) of that fiber it represent. 
+- Whenever a component's `__call__` is called, the callee sets the curr_fiber so that the useState either uses the already existing fiber's state or creates new state completely.
 
   
 
@@ -156,6 +166,7 @@ To keep default terminal color use negative number (every color is set to -1 by 
 
 - Manages the global state of the app. 
 - Only public function of Document is `get_color`
+
 
 ### Next:
 

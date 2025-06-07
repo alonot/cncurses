@@ -50,7 +50,7 @@ impl Button {
         };
         btn.onclick(onclick, false)
     }
-    pub fn onclick<T: FnMut(&mut EVENT) + Send + 'static>(mut self, onclick: T, capture:bool) -> Self {
+    pub fn onclick<T: FnMut(&mut EVENT) + 'static>(mut self, onclick: T, capture:bool) -> Self {
         if capture {
             self.style.onclick_capture = Some(Arc::new(Mutex::new(onclick)));
         } else {
@@ -58,12 +58,20 @@ impl Button {
         }
         self
     }
-    pub fn onscroll<S: FnMut(&mut EVENT) + Send + 'static>(mut self, onscroll: S, capture:bool) -> Self {
+    pub fn onscroll<S: FnMut(&mut EVENT) + 'static>(mut self, onscroll: S, capture:bool) -> Self {
         if capture {
             self.style.onscroll_capture = Some(Arc::new(Mutex::new(onscroll)));
         } else {   
             self.style.onscroll_bubble = Some(Arc::new(Mutex::new(onscroll)));
         }
+        self
+    }
+    pub fn onfocus<T: FnMut() + 'static>(mut self, onfocus: T) -> Self {
+        self.style.onfocus = Some(Arc::new(Mutex::new(onfocus)));
+        self
+    }
+    pub fn onunfocus<S: FnMut() + 'static>(mut self, onunfocus: S) -> Self {
+        self.style.onunfocus = Some(Arc::new(Mutex::new(onunfocus)));
         self
     }
 }
