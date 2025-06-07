@@ -1,7 +1,7 @@
 # CNCURSES
 
 A Component Based Library for ncurses. The Library takes its inspiration from Flutter to declare the Components and React to update the State.
-The motivation came as an update to the [rstop]{https://github.com/alonot/rstop/} was needed. The project previously tried to decouple frontend logic, backend and the display mechanism in a very non-scalable manner.
+The motivation came as an update to the [rstop](https://github.com/alonot/rstop/) was needed. The project previously tried to decouple frontend logic, backend and the display mechanism in a very non-scalable manner.
 
 ## Interface
 
@@ -20,7 +20,7 @@ Library currently provide following `Base` Components which can be used to creat
 
 `Component`:
 Component have a `__call__` method which must be implemented by the Custom Component.
-`__call__` expects `Arc<Mutex<dyn Component>>` as result. Wraping each component in Arc<Mutex<>> becomes too much of boiler plate.
+`__call__` expects `Arc<Mutex<dyn Component>>` as result. Wraping each component in `Arc<Mutex<>>` becomes too much of boiler plate.
 Hence, Internally Library implement a `ComponentBuilder` trait on every type which implement Component. One can import this trait and call
 `.build()` on the Component object to convert it to the required format.
 
@@ -130,7 +130,7 @@ The main use and aim of this feature is in future when library enable support fo
 ## Fote Note
 
 PS: I am really new to rust and may not have used the language at its fullest. I'am still working on this library, and testing of this library is not done as required.
-I am trying to re-create `rstop` project using this library. This would enable me to discover bugs as I go. Thank you.
+I am trying to re-create [rstop](https://github.com/alonot/rstop/) project using this library. This would enable me to discover bugs as I go. Thank you.
 
 Now, I'll try to explain some of the internal structure of the library. Will be update
 
