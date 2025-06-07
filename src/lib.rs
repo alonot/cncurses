@@ -11,7 +11,10 @@ TODO:
 use dyn_clone::clone;
 use interfaces::{Component, Fiber, IViewContent, Stateful};
 use ncurses::{
-    cbreak, curs_set, endwin, getch, getmaxyx, getmouse, has_colors, initscr, keypad, mmask_t, mouseinterval, mousemask, nodelay, noecho, pair_content, refresh, start_color, stdscr, use_default_colors, wrefresh, ALL_MOUSE_EVENTS, BUTTON4_PRESSED, BUTTON5_PRESSED, COLORS, COLOR_PAIRS, KEY_BTAB, KEY_MOUSE, KEY_MOVE, KEY_RESIZE, MEVENT, OK, REPORT_MOUSE_POSITION
+    ALL_MOUSE_EVENTS, BUTTON4_PRESSED, BUTTON5_PRESSED, COLOR_PAIRS, COLORS, KEY_BTAB, KEY_MOUSE,
+    KEY_MOVE, KEY_RESIZE, MEVENT, OK, REPORT_MOUSE_POSITION, cbreak, curs_set, endwin, getch,
+    getmaxyx, getmouse, has_colors, initscr, keypad, mmask_t, mouseinterval, mousemask, nodelay,
+    noecho, pair_content, refresh, start_color, stdscr, use_default_colors, wrefresh,
 };
 use nmodels::IView::IView;
 use std::{
@@ -22,10 +25,15 @@ use std::{
     sync::{Arc, LazyLock, Mutex},
 };
 
-use crate::interfaces::{BASICSTRUCT, DIMEN, Document, EVENT, STYLE};
+use crate::interfaces::{BASICSTRUCT, EVENT};
+use crate::interfaces::Document;
+use crate::styles::STYLE;
+use crate::styles::CSSStyle;
+use crate::styles::DIMEN;
 
 pub mod components;
 pub mod interfaces;
+pub mod styles;
 mod nmodels;
 
 #[macro_export]
@@ -96,6 +104,14 @@ fn initialize() {
         LOGLn!(format!("WARNING: Terminal does not support color"));
     }
     refresh();
+    
+    CSSStyle{
+        border_color : "",
+        flex_direction: "",
+        padding: "",
+        width: "",
+        ..Default::default()
+    };
 }
 
 fn debug_tree(node: Arc<Mutex<IView>>, tabs: i32) {
@@ -616,7 +632,7 @@ fn handle_events(root: Arc<Mutex<IView>>) -> bool {
                 z: 0,
                 bstate: 0,
             };
-            
+
             if getmouse(&mut mevent) == OK {
                 let mut event = EVENT::new(ch);
                 event.mevent = Some(mevent);
@@ -757,16 +773,10 @@ mod test {
         sync::{Arc, Mutex},
     };
 
-    use ncurses::{ COLOR_MAGENTA, COLOR_RED, endwin, getch};
+    use ncurses::{COLOR_MAGENTA, COLOR_RED, endwin, getch};
 
     use crate::{
-        DOCUMENT,
-        components::{text::Text, view::View},
-        create_render_tree, debug_fiber_tree, debug_tree, diff_n_update, handle_events, initialize,
-        interfaces::{
-            BOXSIZING, Component, ComponentBuilder, DIMEN, FLEXDIRECTION, OVERFLOWBEHAVIOUR, STYLE,
-        },
-        use_state, tree_refresh,
+        components::{text::Text, view::View}, create_render_tree, debug_fiber_tree, debug_tree, diff_n_update, handle_events, initialize, interfaces::{Component, ComponentBuilder}, styles::{BOXSIZING, DIMEN, FLEXDIRECTION, OVERFLOWBEHAVIOUR, STYLE}, tree_refresh, use_state, DOCUMENT
     };
 
     struct DemoApp1 {
@@ -776,8 +786,8 @@ mod test {
     impl Component for DemoApp1 {
         fn __call__(&mut self) -> Arc<Mutex<dyn Component>> {
             let (p1, setp1) = use_state::<i32>(self.val);
-            
-            View::new(vec![], vec![]).build()
+
+            View::new_style_vec(vec![], vec![]).build()
         }
     }
 
@@ -797,26 +807,26 @@ mod test {
             let color = DOCUMENT.lock().unwrap().get_color(255, 60, 0);
 
             if p1 == "Ram Ram Bhai Sare Ne" {
-                View::new(
+                View::new_style_vec(
                     vec![
-                        View::new(
+                        View::new_style_vec(
                             vec![
-                                Text::new("Shiv Shambo".to_string(), vec![STYLE::TEXTCOLOR(color)])
+                                Text::new_style_vec("Shiv Shambo".to_string(), vec![STYLE::TEXTCOLOR(color)])
                                     .build(),
                             ],
                             vec![],
                         )
                         .build(),
-                        Text::new("Shiv Shambo".to_string(), vec![]).build(),
-                        Text::new("Shiv Shambo".to_string(), vec![]).build(),
+                        Text::new_style_vec("Shiv Shambo".to_string(), vec![]).build(),
+                        Text::new_style_vec("Shiv Shambo".to_string(), vec![]).build(),
                     ],
                     vec![STYLE::FLEXDIRECTION(FLEXDIRECTION::HORIZONTAL)],
                 )
                 .build()
             } else {
-                View::new_key(
+                View::new_key_style_vec(
                     Some("P".to_string()),
-                    vec![Text::new("Shiv Shambo".to_string(), vec![]).build()],
+                    vec![Text::new_style_vec("Shiv Shambo".to_string(), vec![]).build()],
                     vec![],
                 )
                 .build()
@@ -838,14 +848,14 @@ mod test {
             };
 
             LOGLn!(format!("{p}, {color}"));
-            View::new(
+            View::new_style_vec(
                 vec![
                     DemoApp1 { val: 0 }.build(),
                     DemoApp2 {
                         val: self.v1.clone(),
                     }
                     .build(),
-                    Text::new("Hello asdnaksjdnakjsc ajs cjsd cjasdcjsadjcaskjdcnjasdncjasbdjchasbdjcasjdcnaksjdnclkasncalskjdnckalsnclksandckjansdlkcnaskjdcnaksndcasjkndsjsdajkdnjjsvabhjcnjcnjsdjlsdajxcnxcnkxcmnxcmnxcmnxcmnxcmnxcmnxcm,xcm,xcmnxcm,xcm,xcm,xcmnxcaskbkdjscbasdjcbjasbcjcbkasjbdcajcbashcjbaksjcbsajdchbasdj".to_string(), vec![STYLE::WIDTH(DIMEN::INT(10)), STYLE::OVERFLOW(OVERFLOWBEHAVIOUR::SCROLL),STYLE::HIEGHT(DIMEN::INT(10)), STYLE::TEXTCOLOR(color)]).onclick(move |_e| {
+                    Text::new_style_vec("Hello asdnaksjdnakjsc ajs cjsd cjasdcjsadjcaskjdcnjasdncjasbdjchasbdjcasjdcnaksjdnclkasncalskjdnckalsnclksandckjansdlkcnaskjdcnaksndcasjkndsjsdajkdnjjsvabhjcnjcnjsdjlsdajxcnxcnkxcmnxcmnxcmnxcmnxcmnxcmnxcm,xcm,xcmnxcm,xcm,xcm,xcmnxcaskbkdjscbasdjcbjasbcjcbkasjbdcajcbashcjbaksjcbsajdchbasdj".to_string(), vec![STYLE::WIDTH(DIMEN::INT(10)), STYLE::OVERFLOW(OVERFLOWBEHAVIOUR::SCROLL),STYLE::HIEGHT(DIMEN::INT(10)), STYLE::TEXTCOLOR(color), STYLE::MARGINTOP(DIMEN::INT(5))]).onclick(move |_e| {
                             LOGLn!(format!("I was Called"));
                             setp(10);
                     }, true).build()

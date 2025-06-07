@@ -5,21 +5,22 @@
 use std::{
     cmp::{max, min},
     i32::MAX,
-    ops::Deref,
     sync::{Arc, Mutex},
 };
 
 use ncurses::{
-    BUTTON_SHIFT, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, COLOR_BLUE,
-    COLOR_CYAN, COLOR_GREEN, COLOR_MAGENTA, COLOR_PAIR, COLOR_RED, WINDOW, attroff, attron, box_,
-    copywin, delwin, endwin, getmaxyx, init_pair, mvwprintw, newpad, newwin, pair_content,
-    wattroff, wattron, wbkgd, wrefresh,
+    BUTTON_SHIFT, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED,
+    COLOR_PAIR, WINDOW, box_,
+    copywin, delwin, mvwprintw, newpad, newwin, 
+    wattroff, wattron, wbkgd,
 };
 
 use crate::{
     interfaces::{
-        Component, IViewContent, Style, BASICSTRUCT, BOXSIZING, DIMEN, EVENT, FIT_CONTENT, FLEXDIRECTION, OVERFLOWBEHAVIOUR, STYLE
-    }, DOCUMENT, LOGLn
+        Component, IViewContent, BASICSTRUCT, EVENT
+    }, styles::{
+        CSSStyle, Style, BOXSIZING, DIMEN, FIT_CONTENT, FLEXDIRECTION, OVERFLOWBEHAVIOUR, STYLE
+    }, LOGLn, DOCUMENT
 };
 
 #[derive(Debug)]
@@ -65,8 +66,10 @@ pub(crate) struct IView {
     paddingtop: i32,
     paddingright: i32,
     paddingbottom: i32,
-    marginx: i32,
-    marginy: i32,
+    marginleft: i32,
+    margintop: i32,
+    marginright: i32,
+    marginbottom: i32,
     /**Extra above the content width */
     extrax: i32,
     /**Extra above the content height */
@@ -106,8 +109,10 @@ impl IView {
             paddingtop: 0,
             paddingright: 0,
             paddingbottom: 0,
-            marginx: 0,
-            marginy: 0,
+            marginleft: 0,
+            margintop: 0,
+            marginright: 0,
+            marginbottom: 0,
             extrax: 0,
             extray: 0,
             children_height: 0,
@@ -136,6 +141,19 @@ impl IView {
     ) -> IView {
         let mut iview = IView::new();
         iview.style = Style::from_style(styles);
+        iview.content = content;
+        iview.children = children;
+        iview
+    }
+    
+    /**Uses DOCUMENT lock() */
+    pub(crate) fn with_style(
+        styles: CSSStyle,
+        content: IViewContent,
+        children: Vec<Arc<Mutex<dyn Component>>>,
+    ) -> IView {
+        let mut iview = IView::new();
+        iview.style = styles.create_style();
         iview.content = content;
         iview.children = children;
         iview
@@ -193,7 +211,7 @@ impl IView {
         let mut cheight = 0;
         let mut cwidth = 0;
         let depend_on_child = (self.content_height < 0) || (self.content_width < 0);
-        
+
         // init the chidlren and calculate the new height if dependent on children
         match &self.content {
             IViewContent::CHIDREN(items) => {
@@ -204,34 +222,39 @@ impl IView {
 
                 let direction = &self.style.flex_direction;
 
-                (cheight, cwidth, changed) = items.iter().fold((0, 0, changed), |prev, child_lk| {
-                    let taborder = {
-                        let child = child_lk.lock().unwrap();
-                        child.style.taborder
-                    };
+                (cheight, cwidth, changed) =
+                    items.iter().fold((0, 0, changed), |prev, child_lk| {
+                        let taborder = {
+                            let child = child_lk.lock().unwrap();
+                            child.style.taborder
+                        };
 
-                    // add this to the tab order
-                    if taborder >= 0 {
-                        let mut document = DOCUMENT.lock().unwrap();
-                        document.insert_tab_element(child_lk.clone());
-                    }
-
-                    let mut child = child_lk.lock().unwrap();
-                    // If Child has flex , but no dimension then set the respective dimension as percentage
-                    IView::evaluate_flex(&mut child, total_flex, direction);
-
-                    let (childh, childw, changed) =
-                        child.__init__(self.content_height, self.content_width);
-
-                    match direction {
-                        FLEXDIRECTION::VERTICAL => {
-                            (prev.0 + childh, max(prev.1, childw), prev.2 | changed)
+                        // add this to the tab order
+                        if taborder >= 0 {
+                            let mut document = DOCUMENT.lock().unwrap();
+                            document.insert_tab_element(child_lk.clone());
                         }
-                        FLEXDIRECTION::HORIZONTAL => {
-                            (max(prev.0, childh), prev.1 + childw, prev.2 | changed)
+
+                        let mut child = child_lk.lock().unwrap();
+                        // If Child has flex , but no dimension then set the respective dimension as percentage
+                        IView::evaluate_flex(&mut child, total_flex, direction);
+
+                        let (childh, childw, changed) =
+                            child.__init__(self.content_height, self.content_width);
+
+                        match direction {
+                            FLEXDIRECTION::VERTICAL => (
+                                prev.0 + childh + self.marginbottom + self.margintop,
+                                max(prev.1, childw + self.marginleft + self.marginright),
+                                prev.2 | changed,
+                            ),
+                            FLEXDIRECTION::HORIZONTAL => (
+                                max(prev.0, childh + self.marginbottom + self.margintop),
+                                prev.1 + childw + self.marginleft + self.marginright,
+                                prev.2 | changed,
+                            ),
                         }
-                    }
-                });
+                    });
 
                 if (changed && depend_on_child) || self.basic_struct.is_none() {
                     // then only re-create/ create the window.
@@ -263,7 +286,6 @@ impl IView {
                 }
             }
         };
-        
 
         (cheight, cwidth, changed)
     }
@@ -323,6 +345,62 @@ impl IView {
                     panic!("Invalid Padding Bottom : {}", w)
                 }
                 self.paddingbottom = w;
+            }
+        }
+        match self.style.marginleft {
+            DIMEN::PERCENT(percent) => {
+                if self.content_width == FIT_CONTENT {
+                    self.marginleft = 0; // to be calculated later
+                }
+                self.marginleft = (self.content_width as f32 * percent).floor() as i32;
+            }
+            DIMEN::INT(w) => {
+                if w < 0 {
+                    panic!("Invalid margin Left : {}", w)
+                }
+                self.marginleft = w;
+            }
+        }
+        match self.style.margintop {
+            DIMEN::PERCENT(percent) => {
+                if self.content_height == FIT_CONTENT {
+                    self.margintop = 0; // to be calculated later
+                }
+                self.margintop = (self.content_height as f32 * percent).floor() as i32;
+            }
+            DIMEN::INT(w) => {
+                if w < 0 {
+                    panic!("Invalid margin Top : {}", w)
+                }
+                self.margintop = w;
+            }
+        }
+        match self.style.marginright {
+            DIMEN::PERCENT(percent) => {
+                if self.content_width == FIT_CONTENT {
+                    self.marginright = 0; // to be calculated later
+                }
+                self.marginright = (self.content_width as f32 * percent).floor() as i32;
+            }
+            DIMEN::INT(w) => {
+                if w < 0 {
+                    panic!("Invalid margin Right : {}", w)
+                }
+                self.marginright = w;
+            }
+        }
+        match self.style.marginbottom {
+            DIMEN::PERCENT(percent) => {
+                if self.content_height == FIT_CONTENT {
+                    self.margintop = 0; // to be calculated later
+                }
+                self.marginbottom = (self.content_height as f32 * percent).floor() as i32;
+            }
+            DIMEN::INT(w) => {
+                if w < 0 {
+                    panic!("Invalid margin Bottom : {}", w)
+                }
+                self.marginbottom = w;
             }
         }
     }
@@ -480,7 +558,7 @@ impl IView {
             // update the height and width with padding
             self.height += self.extray;
             self.width += self.extrax;
-            
+
             self.children_height = cheight + self.extray;
             self.children_width = cwidth + self.extrax;
             // LOGLn!(format!(
@@ -500,12 +578,13 @@ impl IView {
         child_render_box: &mut RenderBox,
         top_left: &(i32, i32),
         last_cusor: &(i32, i32),
+        margin: &(i32, i32, i32, i32),
     ) -> RenderBox {
         let mut curr_render_box = RenderBox {
-            toplefty: child_render_box.toplefty + top_left.0 - self.scrolly,
-            topleftx: child_render_box.topleftx + top_left.1 - self.scrollx,
-            bottomrighty: child_render_box.bottomrighty + top_left.0 - self.scrolly,
-            bottomrightx: child_render_box.bottomrightx + top_left.1 - self.scrollx,
+            toplefty: child_render_box.toplefty + top_left.0 - self.scrolly + margin.0,
+            topleftx: child_render_box.topleftx + top_left.1 - self.scrollx + margin.2,
+            bottomrighty: child_render_box.bottomrighty + top_left.0 - self.scrolly + margin.0,
+            bottomrightx: child_render_box.bottomrightx + top_left.1 - self.scrollx + margin.2,
         };
 
         if curr_render_box.toplefty < 0 {
@@ -594,7 +673,6 @@ impl IView {
                 .get_color_pair(self.style.border_color, self.style.background_color)
         };
 
-
         match &self.content {
             IViewContent::CHIDREN(icomponents) => {
                 win = {
@@ -632,17 +710,23 @@ impl IView {
 
                     let prevtopleft = topleft.clone();
 
-                    {
+                    let margin = {
                         let child = child_lk.lock().unwrap();
                         match direction {
                             FLEXDIRECTION::VERTICAL => {
-                                topleft.0 += child.height;
+                                topleft.0 += child.height + self.margintop;
                             }
                             FLEXDIRECTION::HORIZONTAL => {
-                                topleft.1 += child.width;
+                                topleft.1 += child.width + self.marginleft;
                             }
                         }
-                    }
+                        (
+                            child.margintop,
+                            child.marginbottom,
+                            child.marginleft,
+                            child.marginright,
+                        )
+                    };
 
                     if topleft.0 < self.scrolly || topleft.1 < self.scrollx {
                         // if visible is set true then its scrollx and scrolly will already be 0
@@ -651,8 +735,12 @@ impl IView {
 
                     let (mut render_box, child_win) = child_lk.clone().lock().unwrap().__render__();
                     // update the render box
-                    let curr_box =
-                        self.corrected_render_box(&mut render_box, &prevtopleft, &last_cursor);
+                    let curr_box = self.corrected_render_box(
+                        &mut render_box,
+                        &prevtopleft,
+                        &last_cursor,
+                        &margin,
+                    );
                     // LOGLn!(format!(
                     //     "{:p}{:?} {:?} {:?}",
                     //     self, render_box, curr_box, prevtopleft
@@ -673,6 +761,15 @@ impl IView {
                     );
 
                     child_lk.lock().unwrap().destroy_basic_struct();
+
+                    match direction {
+                        FLEXDIRECTION::VERTICAL => {
+                            topleft.0 += margin.1;
+                        }
+                        FLEXDIRECTION::HORIZONTAL => {
+                            topleft.1 += margin.3;
+                        }
+                    }
 
                     curr_render_box.update(&curr_box);
                 });

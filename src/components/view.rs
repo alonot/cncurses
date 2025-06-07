@@ -1,6 +1,8 @@
 use std::{sync::{Arc, Mutex}};
 
-use crate::{interfaces::{IViewContent, Style, EVENT, STYLE}, nmodels::IView::IView, Component};
+use crate::{interfaces::{Component, EVENT}, styles::{CSSStyle, Style, STYLE}, IView, IViewContent};
+
+
 
 /* View 
 Basic Block of screen which can contain multiple child
@@ -25,13 +27,25 @@ impl Component for View {
 
 
 impl View {
-    pub fn new(children: Vec<Arc<Mutex<dyn Component>>>, style: Vec<STYLE>) -> View {
+    pub fn new(children: Vec<Arc<Mutex<dyn Component>>>, style: CSSStyle) -> View {
+        View {
+            key: None,
+            base_component: IView::with_style(style, IViewContent::CHIDREN(vec![]), children).build()
+        }
+    }
+    pub fn new_key(key: Option<String>,children: Vec<Arc<Mutex<dyn Component>>>, style: CSSStyle) -> View {
+        View {
+            key: key,
+            base_component: IView::with_style(style, IViewContent::CHIDREN(vec![]), children).build()
+        }
+    }
+    pub fn new_style_vec(children: Vec<Arc<Mutex<dyn Component>>>, style: Vec<STYLE>) -> View {
         View {
             key: None,
             base_component: IView::with_style_vec(style, IViewContent::CHIDREN(vec![]), children).build()
         }
     }
-    pub fn new_key(key: Option<String>,children: Vec<Arc<Mutex<dyn Component>>>, style: Vec<STYLE>) -> View {
+    pub fn new_key_style_vec(key: Option<String>,children: Vec<Arc<Mutex<dyn Component>>>, style: Vec<STYLE>) -> View {
         View {
             key: key,
             base_component: IView::with_style_vec(style, IViewContent::CHIDREN(vec![]), children).build()

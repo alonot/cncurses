@@ -1,10 +1,17 @@
 use std::{
-    any::Any, cell::RefCell, clone, collections::HashMap, mem::take, rc::Rc, sync::{Arc, LazyLock, Mutex}
+    any::Any,
+    cell::RefCell,
+    clone,
+    collections::HashMap,
+    mem::take,
+    rc::Rc,
+    sync::{Arc, LazyLock, Mutex},
 };
 
 use dyn_clone::DynClone;
 use ncurses::{
-    endwin, init_color, init_pair, newwin, BUTTON1_PRESSED, BUTTON3_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, COLOR_BLACK, COLOR_WHITE, MENU, MEVENT, PANEL, WINDOW
+    BUTTON1_PRESSED, BUTTON3_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, COLOR_BLACK, COLOR_WHITE,
+    MENU, MEVENT, PANEL, WINDOW, endwin, init_color, init_pair, newwin,
 };
 
 use crate::nmodels::IView::IView;
@@ -82,41 +89,6 @@ pub trait ComponentBuilder<T> {
 }
 
 #[derive(Debug)]
-pub enum DIMEN {
-    INT(i32),
-    PERCENT(f32),
-}
-
-impl Default for DIMEN {
-    fn default() -> Self {
-        DIMEN::INT(0)
-    }
-}
-
-impl DIMEN {
-    fn verify(mut self) -> Self{
-        match self {
-            DIMEN::INT(i) => {
-                if i < FIT_CONTENT {
-                    endwin();
-                    panic!("Invalid Dimens: Dimens:INT() >= -1");
-                }
-            },
-            DIMEN::PERCENT(mut p) => {
-                if p > 100.0 || p < 0.0 {
-                    endwin();
-                    panic!("Invalid Dimens: 0 <= Dimen:PERCEN() <= 100");
-                }
-                p = p / 100.0;
-                self = DIMEN::PERCENT(p);
-            },
-        }
-        self
-    }
-
-}
-
-#[derive(Debug)]
 pub struct EVENT {
     pub(crate) mevent: Option<MEVENT>,
     pub(crate) key: i32,
@@ -161,194 +133,6 @@ impl EVENT {
     }
 }
 
-#[derive(Default)]
-pub(crate) struct Style {
-    pub(crate) height: DIMEN,
-    pub(crate) width: DIMEN,
-    pub(crate) top: DIMEN,
-    pub(crate) left: DIMEN,
-    pub(crate) paddingleft: DIMEN,
-    pub(crate) paddingtop: DIMEN,
-    pub(crate) paddingright: DIMEN,
-    pub(crate) paddingbottom: DIMEN,
-    
-    pub(crate) border: i32,
-    pub(crate) border_color: i16,
-    pub(crate) color: i16,
-    pub(crate) background_color: i16,
-    pub(crate) taborder: i32,
-    pub(crate) boxsizing: BOXSIZING,
-    pub(crate) flex: u32,
-    pub(crate) flex_direction: FLEXDIRECTION,
-    pub(crate) z_index: i32,
-    pub(crate) onclick_bubble: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + Send>>>, // should be a clousure
-    pub(crate) onscroll_bubble: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + Send>>>, // should be a clousure
-    pub(crate) onclick_capture: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + Send>>>, // should be a clousure
-    pub(crate) onscroll_capture: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + Send>>>, // should be a clousure
-    pub(crate) render: bool,
-    pub(crate) scroll: OVERFLOWBEHAVIOUR,
-}
-
-pub const FIT_CONTENT: i32 = -1;
-pub const MAX_CONTENT: i32 = -2;
-
-impl Style {
-    pub(crate) fn default() -> Style {
-        Style {
-            height: DIMEN::INT(FIT_CONTENT),
-            width: DIMEN::INT(FIT_CONTENT),
-            top: DIMEN::default(),
-            left: DIMEN::default(),
-            paddingleft: DIMEN::default(),
-            paddingtop: DIMEN::default(),
-            paddingright: DIMEN::default(),
-            paddingbottom: DIMEN::default(),
-            border: 0,
-            border_color: -1,
-            color: -1,
-            background_color: -2,   
-            flex_direction: FLEXDIRECTION::default(),
-            boxsizing: BOXSIZING::default(),
-            flex: 0,
-            taborder: -1,
-            z_index: 0,
-            onclick_bubble: None,
-            onscroll_bubble: None,
-            onclick_capture: None,
-            onscroll_capture: None,
-            render: true,
-            scroll: OVERFLOWBEHAVIOUR::HIDDEN,
-        }
-    }
-    pub(crate) fn set_style(&mut self, v: STYLE) {
-        match v {
-            STYLE::TABORDER(t) => self.taborder = t,
-            STYLE::HIEGHT(h) =>self.height = h.verify(),
-            STYLE::WIDTH(w) => self.width = w.verify(),
-            STYLE::TOP(t) => self.top = t.verify(),
-            STYLE::LEFT(t) => self.left = t.verify(),
-            STYLE::PADDINGLEFT(p) => self.paddingleft = p.verify(),
-            STYLE::PADDINGTOP(p) => self.paddingtop = p.verify(),
-            STYLE::PADDINGRIGHT(p) => self.paddingright = p.verify(),
-            STYLE::PADDINGBOTTOM(p) => self.paddingbottom = p.verify(),
-            STYLE::BORDER(b) => self.border = b as i32,
-            STYLE::FLEX(f) => self.flex = f,
-            STYLE::FLEXDIRECTION(f) => self.flex_direction = f,
-            STYLE::BOXSIZING(f) => self.boxsizing = f,
-            STYLE::BACKGROUNDCOLOR(bg) => self.background_color = bg,
-            STYLE::TEXTCOLOR(bg) => self.color = bg,
-            STYLE::BORDERCOLOR(bg) => self.border_color = bg,
-            STYLE::ZINDEX(z) => self.z_index = z,
-            STYLE::OVERFLOW(overflow_behaviour) => self.scroll = overflow_behaviour,
-        }
-    }
-
-    pub(crate) fn from_style(styles: Vec<STYLE>) -> Style {
-        let mut style_obj = Style::default();
-
-        styles.into_iter().for_each(|v| {
-            style_obj.set_style(v);
-        });
-
-        style_obj
-    }
-
-    /**
-     * Handles the incoming event with correct event handler.
-     * returns if the event should propogate further or not.
-     * true: stop_propogation
-     */
-    pub(crate) fn handle_event(&self, event: &mut EVENT, capture: bool) {
-        let mut fnc_opt: &Option<Arc<Mutex<dyn FnMut(&mut EVENT) + Send>>> = &None;
-
-        if let Some(mevent) = event.mevent {
-            if mevent.bstate == BUTTON1_PRESSED as u32 || mevent.bstate == BUTTON3_PRESSED as u32 {
-                // left mouse clicked                           // right click
-                if capture {
-                    fnc_opt = &self.onclick_capture;
-                } else {
-                    fnc_opt = &self.onclick_bubble;
-                }
-            } else if mevent.bstate == BUTTON4_PRESSED as u32
-                || mevent.bstate == BUTTON5_PRESSED as u32
-            {
-                // scroll up                                            // scroll down
-                if capture {
-                    fnc_opt = &self.onscroll_capture;
-                } else {
-                    fnc_opt = &self.onscroll_bubble;
-                }
-            }
-        } else if !capture { // TODO
-        }
-
-        if let Some(fnc) = fnc_opt {
-            fnc.lock().unwrap()(event);
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum OVERFLOWBEHAVIOUR {
-    VISIBLE,
-    HIDDEN,
-    SCROLL,
-}
-
-impl Default for OVERFLOWBEHAVIOUR {
-    fn default() -> Self {
-        OVERFLOWBEHAVIOUR::HIDDEN
-    }
-}
-
-pub enum FLEXDIRECTION {
-    VERTICAL,
-    HORIZONTAL,
-}
-
-impl Default for FLEXDIRECTION {
-    fn default() -> Self {
-        FLEXDIRECTION::VERTICAL
-    }
-}
-
-pub enum BOXSIZING {
-    /** The padding is taken within the content dimensions. If height is set to FITCONTENT then boxsizing will be forced to border box for height. Similarly for width too. */
-    BORDERBOX,
-    /** The padding is outside the content dimensions */
-    CONTENTBOX,
-}
-
-impl Default for BOXSIZING {
-    fn default() -> Self {
-        BOXSIZING::CONTENTBOX
-    }
-}
-
-pub enum STYLE {
-    HIEGHT(DIMEN),
-    WIDTH(DIMEN),
-    /** relative to current position */
-    TOP(DIMEN),
-    LEFT(DIMEN),
-    PADDINGLEFT(DIMEN),
-    PADDINGTOP(DIMEN),
-    PADDINGRIGHT(DIMEN),
-    PADDINGBOTTOM(DIMEN),
-    TABORDER(i32),
-    BORDER(bool),
-    BACKGROUNDCOLOR(i16),
-    TEXTCOLOR(i16),
-    BORDERCOLOR(i16),
-    BOXSIZING(BOXSIZING),
-    /** 0 means unset. Actual Height and width dimensions with INT gets priority over flex. if they are set with PERCEN then flex gets priority. */
-    FLEX(u32),
-    /**Default Vertical */
-    FLEXDIRECTION(FLEXDIRECTION),
-    ZINDEX(i32),
-    OVERFLOW(OVERFLOWBEHAVIOUR),
-}
-
 /**
  * Hooks struct. Each Component will have its own object of this struct
  */
@@ -387,10 +171,9 @@ impl Fiber {
     }
 }
 
-
 pub(crate) struct TabElement {
     id: i32,
-    iview: Arc<Mutex<IView>>
+    iview: Arc<Mutex<IView>>,
 }
 
 pub struct Document {
@@ -407,7 +190,7 @@ pub struct Document {
     pub(crate) curr_color_pair: u16,
     /** Used when colors goes above limit(COLORS) */
     /** turned true if some changed happen to any IView. (This may occur even though there was no state change in Fiber. Eg of such events. Scroll, Focus) */
-    pub(crate) changed:bool
+    pub(crate) changed: bool,
 }
 
 impl Document {
@@ -417,12 +200,12 @@ impl Document {
 
     /**
      * returns pair Number
-     * 
+     *
      * if this pair already exists return the pair number
      * OR
      * initialize a new pair using the given pairs
      * if total pairs limit cross then ignores the give pairs and just returns previously initialized pairs in circular format
-     * 
+     *
      */
     pub(crate) fn get_color_pair(&mut self, color_foregorund: i16, color_background: i16) -> i16 {
         let mut c_pairs = self.color_pairs.lock().unwrap();
@@ -441,19 +224,19 @@ impl Document {
         self.curr_color_pair += 1;
         return pair_no as i16;
     }
-   
+
     /**
      * returns color index
-     * 
+     *
      * red : 0 - 255
      * green: 0 - 255
      * blue: 0 - 255
-     * 
+     *
      * in box : (6 * 6 * 6)
-     * 
+     *
      */
     pub fn get_color(&mut self, red: i16, green: i16, blue: i16) -> i16 {
-        let (r, g,b) = (red.min(255) / 51, green.min(255) / 51, blue.min(255) / 51 );
+        let (r, g, b) = (red.min(255) / 51, green.min(255) / 51, blue.min(255) / 51);
         return 16 + (36 * r + 6 * g + b);
     }
 
@@ -503,7 +286,10 @@ impl Document {
     /** Uses element.lock() */
     pub(crate) fn insert_tab_element(&mut self, element: Arc<Mutex<IView>>) {
         let id = element.lock().unwrap().id;
-        self.taborder.push(TabElement { id: id, iview: element });  
+        self.taborder.push(TabElement {
+            id: id,
+            iview: element,
+        });
     }
 
     /**creates the tab order using the inserted elements so far */

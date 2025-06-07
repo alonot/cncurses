@@ -1,6 +1,6 @@
 use std::{mem::take, sync::{Arc, Mutex}};
 
-use crate::{interfaces::{ComponentBuilder, Style, EVENT, STYLE}, Component};
+        use crate::{interfaces::{Component, ComponentBuilder, EVENT}, styles::{CSSStyle, Style, STYLE}};
 use super::view::View;
 
 /* Button 
@@ -14,7 +14,7 @@ pub struct Button{
 
 impl Component for Button {
     fn __call__(&mut self) -> Arc<Mutex<dyn Component>>  {
-        let mut binding = View::new_key(
+        let mut binding = View::new_key_style_vec(
             self.key.clone(),
             vec![self.child.clone()], 
             vec![STYLE::TABORDER(0)]
@@ -32,6 +32,16 @@ impl Component for Button {
 impl Button {
     pub fn new<T: FnMut(&mut EVENT) + Send +'static>(key: Option<String>,child: Arc<Mutex<dyn Component>>, style: Vec<STYLE>,  onclick: T) -> Button {
         let style_obj = Style::from_style(style);
+        
+        let btn = Button {
+            key: key,
+            child: child,
+            style: style_obj
+        };
+        btn.onclick(onclick, false)
+    }
+    pub fn new_style_vec<T: FnMut(&mut EVENT) + Send +'static>(key: Option<String>,child: Arc<Mutex<dyn Component>>, style: CSSStyle,  onclick: T) -> Button {
+        let style_obj = style.create_style();
         
         let btn = Button {
             key: key,

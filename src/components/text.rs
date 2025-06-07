@@ -1,6 +1,6 @@
-use std::{mem::take, sync::{Arc, Mutex}};
+use std::sync::{Arc, Mutex};
 
-use crate::{interfaces::{EVENT, STYLE}, nmodels::IView::IView, Component, LOGLn};
+use crate::{interfaces::{Component, EVENT}, styles::{CSSStyle, STYLE}, IView};
 
 /* Text 
  Basic Text which can hold an string
@@ -23,14 +23,28 @@ impl Component for Text {
 }
 
 impl Text {
-    pub fn new(text: String, style: Vec<STYLE>) -> Text {
+    pub fn new(text: String, style: CSSStyle) -> Text {
+        let iview = IView::with_style( style, crate::IViewContent::TEXT(text), vec![]);
+        Text {
+            key: None,
+            base_component: iview.build()
+        }
+    }
+    pub fn new_key(key: Option<String>,text: String, style: CSSStyle) -> Text {
+        let iview = IView::with_style( style, crate::IViewContent::TEXT(text), vec![]);
+        Text {
+            key: key,
+            base_component: iview.build()
+        }
+    }
+    pub fn new_style_vec(text: String, style: Vec<STYLE>) -> Text {
         let iview = IView::from_text(text, style);
         Text {
             key: None,
             base_component: iview.build()
         }
     }
-    pub fn new_key(key: Option<String>,text: String, style: Vec<STYLE>) -> Text {
+    pub fn new_key_style_vec(key: Option<String>,text: String, style: Vec<STYLE>) -> Text {
         let iview = IView::from_text(text, style);
         Text {
             key: key,

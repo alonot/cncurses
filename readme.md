@@ -159,7 +159,5 @@ To keep default terminal color use negative number (every color is set to -1 by 
 
 ### Next:
 
-2. Margin
-3. Improving the user interface
 5. Event Loop
 6. Extended Color support
