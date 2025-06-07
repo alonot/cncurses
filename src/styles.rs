@@ -1,12 +1,14 @@
 use std::{
-    mem::take, sync::{Arc, Mutex}
+    mem::take,
+    sync::{Arc, Mutex},
 };
 
-use ncurses::{endwin, BUTTON1_PRESSED, BUTTON3_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, KEY_BTAB};
+use ncurses::{
+    BUTTON1_PRESSED, BUTTON3_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, KEY_BTAB, endwin,
+};
 
-use crate::{interfaces::EVENT, LOGLn};
+use crate::{LOGLn, interfaces::EVENT};
 
-#[derive(Default)]
 pub struct CSSStyle<'a> {
     pub padding: &'a str,
     pub margin: &'a str,
@@ -16,6 +18,7 @@ pub struct CSSStyle<'a> {
     pub flex_direction: &'a str,
     pub taborder: i32,
     pub border_color: i16,
+    pub position: &'a str,
     pub boxsizing: &'a str,
     pub border: i32,
     pub top: &'a str,
@@ -24,6 +27,30 @@ pub struct CSSStyle<'a> {
     pub width: &'a str,
     pub scroll: &'a str,
     pub z_index: i32,
+}
+
+impl<'a> Default for CSSStyle<'a> {
+    fn default() -> Self {
+        Self {
+            padding: Default::default(),
+            margin: Default::default(),
+            flex_direction: Default::default(),
+            position: Default::default(),
+            boxsizing: Default::default(),
+            background_color: -1,
+            color: -1,
+            flex: 0,
+            taborder: -1,
+            border_color: -1,
+            border: 0,
+            top: Default::default(),
+            left: Default::default(),
+            height: Default::default(),
+            width: Default::default(),
+            scroll: Default::default(),
+            z_index: 0,
+        }
+    }
 }
 
 fn parse_dimension<'a>(mut d: &'a str) -> DIMEN {
@@ -38,14 +65,13 @@ fn parse_dimension<'a>(mut d: &'a str) -> DIMEN {
     if let Some(p) = percen {
         return DIMEN::PERCENT(p / 100.);
     } else {
-        return  DIMEN::INT(d.parse::<i32>().expect("Invalid Dimension")) ;
+        return DIMEN::INT(d.parse::<i32>().expect("Invalid Dimension"));
     }
 }
 
 fn parse_multi_dimens<'a>(mut d: &'a str) -> [DIMEN; 4] {
     d = d.trim();
-    d
-        .split(' ')
+    d.split(' ')
         .into_iter()
         .map(|c| parse_dimension(c))
         .collect::<Vec<DIMEN>>()
@@ -55,30 +81,28 @@ fn parse_multi_dimens<'a>(mut d: &'a str) -> [DIMEN; 4] {
 
 fn parse_flex_direction<'a>(d: &'a str) -> FLEXDIRECTION {
     match d.trim() {
-        "vertical" => {
-            FLEXDIRECTION::VERTICAL
-        },
-        "horizontal" => {
-            LOGLn!("h");
-            FLEXDIRECTION::HORIZONTAL
-        },
+        "vertical" => FLEXDIRECTION::VERTICAL,
+        "horizontal" => FLEXDIRECTION::HORIZONTAL,
         _ => {
             panic!("Invalid Flex Direction")
+        }
+    }
+}
+fn parse_position<'a>(d: &'a str) -> POSITION {
+    match d.trim() {
+        "static" => POSITION::STATIC,
+        "relative" => POSITION::RELATIVE,
+        _ => {
+            panic!("Invalid position")
         }
     }
 }
 
 fn parse_overflow<'a>(d: &'a str) -> OVERFLOWBEHAVIOUR {
     match d.trim() {
-        "scroll" => {
-            OVERFLOWBEHAVIOUR::SCROLL
-        },
-        "visible" => {
-            OVERFLOWBEHAVIOUR::VISIBLE
-        },
-        "hidden" => {
-            OVERFLOWBEHAVIOUR::HIDDEN
-        },
+        "scroll" => OVERFLOWBEHAVIOUR::SCROLL,
+        "visible" => OVERFLOWBEHAVIOUR::VISIBLE,
+        "hidden" => OVERFLOWBEHAVIOUR::HIDDEN,
         _ => {
             panic!("Invalid Overflow")
         }
@@ -87,12 +111,8 @@ fn parse_overflow<'a>(d: &'a str) -> OVERFLOWBEHAVIOUR {
 
 fn parse_box_sizing<'a>(d: &'a str) -> BOXSIZING {
     match d.trim() {
-        "border-box" => {
-            BOXSIZING::BORDERBOX
-        },
-        "content-box" => {
-            BOXSIZING::CONTENTBOX
-        },
+        "border-box" => BOXSIZING::BORDERBOX,
+        "content-box" => BOXSIZING::CONTENTBOX,
         _ => {
             panic!("Invalid Box Sizing")
         }
@@ -126,10 +146,14 @@ impl<'a> CSSStyle<'a> {
         style.background_color = self.background_color;
         style.border = self.border;
         style.border_color = self.border_color;
+        style.color = self.color;
         style.flex = self.flex;
         style.taborder = self.taborder;
         if !self.flex_direction.is_empty() {
             style.flex_direction = parse_flex_direction(self.flex_direction);
+        }
+        if !self.position.is_empty() {
+            style.position = parse_position(self.position);
         }
         if !self.boxsizing.is_empty() {
             style.boxsizing = parse_box_sizing(self.boxsizing);
@@ -196,6 +220,7 @@ pub(crate) struct Style {
     pub(crate) marginright: DIMEN,
     pub(crate) marginbottom: DIMEN,
 
+    pub(crate) position: POSITION,
     pub(crate) border: i32,
     pub(crate) border_color: i16,
     pub(crate) color: i16,
@@ -205,17 +230,17 @@ pub(crate) struct Style {
     pub(crate) flex: u32,
     pub(crate) flex_direction: FLEXDIRECTION,
     pub(crate) z_index: i32,
-    pub(crate) onclick_bubble: Option<Arc<Mutex<dyn FnMut(&mut EVENT)>>>, // should be a clousure
-    pub(crate) onscroll_bubble: Option<Arc<Mutex<dyn FnMut(&mut EVENT)>>>, // should be a clousure
-    pub(crate) onclick_capture: Option<Arc<Mutex<dyn FnMut(&mut EVENT)>>>, // should be a clousure
-    pub(crate) onscroll_capture: Option<Arc<Mutex<dyn FnMut(&mut EVENT)>>>, // should be a clousure
-    pub(crate) onfocus: Option<Arc<Mutex<dyn FnMut()>>>, // should be a clousure
-    pub(crate) onunfocus: Option<Arc<Mutex<dyn FnMut()>>>, // should be a clousure
+    pub(crate) onclick_bubble: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + 'static>>>, // should be a clousure
+    pub(crate) onscroll_bubble: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + 'static>>>, // should be a clousure
+    pub(crate) onclick_capture: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + 'static>>>, // should be a clousure
+    pub(crate) onscroll_capture: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + 'static>>>, // should be a clousure
+    pub(crate) onfocus: Option<Arc<Mutex<dyn FnMut() + 'static>>>,                  // should be a clousure
+    pub(crate) onunfocus: Option<Arc<Mutex<dyn FnMut() + 'static>>>,                // should be a clousure
     pub(crate) render: bool,
     pub(crate) scroll: OVERFLOWBEHAVIOUR,
 }
 
-unsafe impl Send for Style{}
+unsafe impl Send for Style {}
 
 pub const FIT_CONTENT: i32 = -1;
 pub const MAX_CONTENT: i32 = -2;
@@ -241,6 +266,7 @@ impl Style {
             background_color: -2,
             flex_direction: FLEXDIRECTION::default(),
             boxsizing: BOXSIZING::default(),
+            position: POSITION::default(),
             flex: 0,
             taborder: -1,
             z_index: 0,
@@ -265,13 +291,14 @@ impl Style {
             STYLE::PADDINGTOP(p) => self.paddingtop = p.verify(),
             STYLE::PADDINGRIGHT(p) => self.paddingright = p.verify(),
             STYLE::PADDINGBOTTOM(p) => self.paddingbottom = p.verify(),
-            STYLE::MARGINLEFT(p) => self.paddingleft = p.verify(),
-            STYLE::MARGINTOP(p) => self.paddingtop = p.verify(),
-            STYLE::MARGINRIGHT(p) => self.paddingright = p.verify(),
-            STYLE::MARGINBOTTOM(p) => self.paddingbottom = p.verify(),
+            STYLE::MARGINLEFT(p) => self.marginleft = p.verify(),
+            STYLE::MARGINTOP(p) => self.margintop = p.verify(),
+            STYLE::MARGINRIGHT(p) => self.marginright = p.verify(),
+            STYLE::MARGINBOTTOM(p) => self.marginbottom = p.verify(),
             STYLE::BORDER(b) => self.border = b as i32,
             STYLE::FLEX(f) => self.flex = f,
             STYLE::FLEXDIRECTION(f) => self.flex_direction = f,
+            STYLE::POSITION(f) => self.position = f,
             STYLE::BOXSIZING(f) => self.boxsizing = f,
             STYLE::BACKGROUNDCOLOR(bg) => self.background_color = bg,
             STYLE::TEXTCOLOR(bg) => self.color = bg,
@@ -317,7 +344,7 @@ impl Style {
                     fnc_opt = &self.onscroll_bubble;
                 }
             }
-        } else if !capture { 
+        } else if !capture {
             match event.key {
                 _ => {}
             }
@@ -354,6 +381,18 @@ impl Default for FLEXDIRECTION {
     }
 }
 
+#[derive(Debug)]
+pub enum POSITION {
+    STATIC,
+    RELATIVE,
+}
+
+impl Default for POSITION {
+    fn default() -> Self {
+        POSITION::STATIC
+    }
+}
+
 pub enum BOXSIZING {
     /** The padding is taken within the content dimensions. If height is set to FITCONTENT then boxsizing will be forced to border box for height. Similarly for width too. */
     BORDERBOX,
@@ -387,6 +426,7 @@ pub enum STYLE {
     TEXTCOLOR(i16),
     BORDERCOLOR(i16),
     BOXSIZING(BOXSIZING),
+    POSITION(POSITION),
     /** 0 means unset. Actual Height and width dimensions with INT gets priority over flex. if they are set with PERCEN then flex gets priority. */
     FLEX(u32),
     /**Default Vertical */

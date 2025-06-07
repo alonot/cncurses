@@ -47,9 +47,9 @@ macro_rules! LOGLn {
 
 #[macro_export]
 macro_rules! LOG {
-    ($val:expr) => {
+    ($val:expr $(, $other:expr)* ) => {
         let var = std::fs::read_to_string("debug.txt").map_or(format!(""), |f| f);
-        let _ = std::fs::write("debug.txt", format!("{var}{}", $val));
+        let _ = std::fs::write("debug.txt", format!(concat!("{}", $val), var,$($other, )*));
     };
 }
 
@@ -481,7 +481,7 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> b
                 fiber.children = new_children;
             }
             drop(base);
-            debug_tree(base_lk.clone(), 0);
+            // debug_tree(base_lk.clone(), 0);
             base_lk.clone()
         } else {
             // this is not base component.
@@ -518,14 +518,14 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> b
                 {
                     let mut child = child_lk.lock().unwrap();
                     child.changed = true;
-                    let Some(iview) = child.iview.clone() else {
-                        panic!("asd")
-                    };
-                    LOGLn!(
-                        "{:?} ___ {:p}",
-                        Arc::as_ptr(&fiber_lk),
-                        &*iview.lock().unwrap()
-                    );
+                    // let Some(iview) = child.iview.clone() else {
+                    //     panic!("asd")
+                    // };
+                    // LOGLn!(
+                    //     "{:?} ___ {:p}",
+                    //     Arc::as_ptr(&fiber_lk),
+                    //     &*iview.lock().unwrap()
+                    // );
                     child.component = new_node.clone();
                 }
 
@@ -607,12 +607,18 @@ fn tree_refresh(root: Arc<Mutex<IView>>) -> (i32, i32, bool) {
     getmaxyx(stdscr(), y, x);
     {
         let mut document = DOCUMENT.lock().unwrap();
-        document.clear_tab_order();
         document.clear_color_pairs();
-    }
+        // document.clear_tab_order()
+    };
     let res = root.lock().unwrap().__init__(*y, *x);
     if res.2 {
-        DOCUMENT.lock().unwrap().create_tab_order();
+        {
+            let mut document = DOCUMENT.lock().unwrap();
+            REMOVEINDEX.lock().unwrap().iter().for_each(|id| {
+                document.remove_id(id);
+            });
+            document.create_tab_order();
+        }
 
         let _ = root.lock().unwrap().__render__();
         let Some(basic_struct) = &root.lock().unwrap().basic_struct else {
@@ -705,13 +711,6 @@ fn handle_keyboard_event(ch: i32) -> bool {
                     document.advance_tab()
                 };
                 handle_focus_change(prev_iview, new_iview);
-                {
-                    let Some(fiber) = DOCUMENT.lock().unwrap().curr_fiber.clone() else {
-                        panic!("No fiber")
-                    };
-
-                    debug_fiber_tree(fiber.clone(), 0);
-                }
             }
             KEY_UP | KEY_DOWN | KEY_RIGHT | KEY_LEFT => {
                 // scroll on current active element
@@ -775,6 +774,8 @@ fn handle_events(root: Arc<Mutex<IView>>) -> bool {
     }
     return false;
 }
+
+pub(crate) static REMOVEINDEX: Mutex<Vec<i32>> = Mutex::new(vec![]);
 
 /************  Public Functions  ********** */
 
@@ -843,7 +844,7 @@ pub fn use_state<T: Stateful + Debug>(init_val: T) -> (T, Arc<dyn Fn(T)>) {
             *box_value = Box::new(clone(&val));
             currfiber.changed = true; // to re render this section
         }
-        LOGLn!("{:?}", Arc::as_ptr(&currfiber_lk));
+        // LOGLn!("{:?}", Arc::as_ptr(&currfiber_lk));
     };
 
     return (clone(downcasted_val), Arc::new(set_value));
@@ -854,16 +855,17 @@ pub fn use_state<T: Stateful + Debug>(init_val: T) -> (T, Arc<dyn Fn(T)>) {
 */
 pub fn run(app: impl Component) {
     let _ = std::fs::write("debug.txt", "");
-    panic::set_hook(Box::new(|info| {
-        endwin();
-        LOGLn!("{}", info);
-    }));
-
+    
     initialize();
-
+    
     let node: Arc<Mutex<dyn Component>> = Arc::new(Mutex::new(app));
-
+    
     let root = create_render_tree(node);
+    // let rootc = root.clone();
+    panic::set_hook(Box::new(move |info| {
+        endwin();
+        println!("{}", info);
+    }));
 
     loop {
         // if change, get the tree from the app.
@@ -873,15 +875,15 @@ pub fn run(app: impl Component) {
 
         // if changes, render the changed portion
         if changed {
-            debug_tree(root.clone(), 0);
+            // debug_tree(root.clone(), 0);
             let _ = tree_refresh(root.clone());
-            {
-                let Some(fiber) = DOCUMENT.lock().unwrap().curr_fiber.clone() else {
-                    panic!("No fiber")
-                };
+            // {
+            //     let Some(fiber) = DOCUMENT.lock().unwrap().curr_fiber.clone() else {
+            //         panic!("No fiber")
+            //     };
 
-                debug_fiber_tree(fiber.clone(), 0);
-            }
+            //     debug_fiber_tree(fiber.clone(), 0);
+            // }
         }
 
         // handle click and scroll
@@ -990,7 +992,7 @@ mod test {
             };
             let p1 = setp.clone();
 
-            LOGLn!("{}, {}", p, color);
+            // LOGLn!("{}, {}", p, color);
             View::new_style_vec(
                 vec![
                     DemoApp1 { val: 0 }.build(),
@@ -998,7 +1000,7 @@ mod test {
                         val: self.v1.clone(),
                     }
                     .build(),
-                    Text::new_style_vec("Hello asdnaksjdnakjsc ajs cjsd cjasdcjsadjcaskjdcnjasdncjasbdjchasbdjcasjdcnaksjdnclkasncalskjdnckalsnclksandckjansdlkcnaskjdcnaksndcasjkndsjsdajkdnjjsvabhjcnjcnjsdjlsdajxcnxcnkxcmnxcmnxcmnxcmnxcmnxcmnxcm,xcm,xcmnxcm,xcm,xcm,xcmnxcaskbkdjscbasdjcbjasbcjcbkasjbdcajcbashcjbaksjcbsajdchbasdj".to_string(), vec![STYLE::WIDTH(DIMEN::INT(10)), STYLE::OVERFLOW(OVERFLOWBEHAVIOUR::SCROLL),STYLE::HIEGHT(DIMEN::INT(10)), STYLE::TEXTCOLOR(color), STYLE::MARGINTOP(DIMEN::INT(5))]).onclick(move |_e| {
+                    Text::new_style_vec("Hello askdjnakjsncasjcas aasmdkancaksjdncjasdckjasdbcjasbcdjsbdchjsbdj ppp ooo ooo lll iii asdnakjsdlnc jasdncljlnasdcjans ljdc asjkdc nljaskd cja sndjckasnlcjk qqq asncjkasnciunsciuasndcjnasdvcabsdjbcajsdbcjasdcjasbxcnxbccasdbciausnaskdnvjkasbcmn xcjknizxjn kasnuijcnw www".to_string(), vec![STYLE::WIDTH(DIMEN::INT(10)), STYLE::OVERFLOW(OVERFLOWBEHAVIOUR::SCROLL),STYLE::HIEGHT(DIMEN::INT(8)), STYLE::TEXTCOLOR(color), STYLE::MARGINTOP(DIMEN::INT(5))]).onclick(move |_e| {
                             LOGLn!("I was Called");
                             setp(10);
                     }, true).build()

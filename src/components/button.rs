@@ -1,6 +1,6 @@
 use std::{mem::take, sync::{Arc, Mutex}};
 
-        use crate::{interfaces::{Component, ComponentBuilder, EVENT}, styles::{CSSStyle, Style, STYLE}};
+        use crate::{interfaces::{Component, ComponentBuilder, EVENT}, styles::{CSSStyle, Style, STYLE}, LOGLn};
 use super::view::View;
 
 /* Button 
@@ -30,7 +30,7 @@ impl Component for Button {
 
 
 impl Button {
-    pub fn new<T: FnMut(&mut EVENT) + Send +'static>(key: Option<String>,child: Arc<Mutex<dyn Component>>, style: Vec<STYLE>,  onclick: T) -> Button {
+    pub fn new_style_vec<T: FnMut(&mut EVENT) +'static>(key: Option<String>,child: Arc<Mutex<dyn Component>>, style: Vec<STYLE>,  onclick: T) -> Button {
         let style_obj = Style::from_style(style);
         
         let btn = Button {
@@ -40,7 +40,7 @@ impl Button {
         };
         btn.onclick(onclick, false)
     }
-    pub fn new_style_vec<T: FnMut(&mut EVENT) + Send +'static>(key: Option<String>,child: Arc<Mutex<dyn Component>>, style: CSSStyle,  onclick: T) -> Button {
+    pub fn new<T: FnMut(&mut EVENT) +'static>(key: Option<String>,child: Arc<Mutex<dyn Component>>, style: CSSStyle,  onclick: T) -> Button {
         let style_obj = style.create_style();
         
         let btn = Button {

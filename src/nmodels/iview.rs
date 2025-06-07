@@ -9,15 +9,15 @@ use std::{
 };
 
 use ncurses::{
-    box_, copywin, delwin, mvwprintw, newpad, newwin, ungetch, wattroff, wattron, wbkgd, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, BUTTON_SHIFT, COLOR_PAIR, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_UP, WINDOW
+    BUTTON_SHIFT, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, COLOR_PAIR,
+    KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_UP, WINDOW, box_, copywin, delwin, mvwprintw, newpad,
+    newwin, ungetch, wattroff, wattron, wbkgd,
 };
 
 use crate::{
-    DOCUMENT, LOGLn,
-    interfaces::{BASICSTRUCT, Component, EVENT, IViewContent},
-    styles::{
-        BOXSIZING, CSSStyle, DIMEN, FIT_CONTENT, FLEXDIRECTION, OVERFLOWBEHAVIOUR, STYLE, Style,
-    },
+    interfaces::{Component, IViewContent, BASICSTRUCT, EVENT}, styles::{
+        CSSStyle, Style, BOXSIZING, DIMEN, FIT_CONTENT, FLEXDIRECTION, OVERFLOWBEHAVIOUR, POSITION, STYLE
+    }, LOGLn, DOCUMENT, LOG, REMOVEINDEX
 };
 
 #[derive(Debug)]
@@ -41,6 +41,20 @@ impl RenderBox {
         self.toplefty = self.toplefty.min(other.toplefty);
         self.bottomrightx = self.bottomrightx.max(other.bottomrightx);
         self.bottomrighty = self.bottomrighty.max(other.bottomrighty);
+    }
+    pub(crate) fn add_to_all(&mut self, num: i32) {
+        self.topleftx += num;
+        self.toplefty += num;
+        self.bottomrightx += num;
+        self.bottomrighty += num;
+    }
+
+    /***
+     * Checks if given points falls under this render box(boundary included)
+     */
+    pub(crate) fn is_inside(&self, point: (i32, i32)) -> bool {
+        (point.0 >= self.toplefty && point.0 <= self.bottomrighty)
+            && (point.1 >= self.topleftx && point.1 <= self.bottomrightx)
     }
 }
 
@@ -69,6 +83,8 @@ pub(crate) struct IView {
     margintop: i32,
     marginright: i32,
     marginbottom: i32,
+    top: i32,
+    left: i32,
     /**Extra above the content width */
     extrax: i32,
     /**Extra above the content height */
@@ -80,6 +96,13 @@ pub(crate) struct IView {
     children_height: i32,
     /**  Used to check scroll limit */
     children_width: i32,
+}
+
+impl Drop for IView {
+    /** Requires DOCUMENT.lock() */
+    fn drop(&mut self) {
+        REMOVEINDEX.lock().unwrap().push(self.id);
+    }
 }
 
 impl IView {
@@ -113,6 +136,8 @@ impl IView {
             margintop: 0,
             marginright: 0,
             marginbottom: 0,
+            top: 0,
+            left: 0,
             extrax: 0,
             extray: 0,
             children_height: 0,
@@ -269,13 +294,15 @@ impl IView {
                     }
 
                     if self.content_width > 0 {
-                        cheight = (txt.len() as f32 / self.content_width as f32).ceil() as i32;
-                        cwidth = min(txt.len() as i32, self.content_width);
+                        cheight = ((txt.len() as f32 / self.content_width as f32).ceil() as i32)
+                            .max(self.content_height);
+                        cwidth = self.content_width;
                     }
 
                     if self.content_height == FIT_CONTENT {
                         self.content_height = cheight;
                     }
+                    // LOGLn!("L: {:p} {} {} {} {} ",self, self.content_height, self.content_width, cheight, cwidth);
                 }
             }
         };
@@ -396,6 +423,28 @@ impl IView {
                 self.marginbottom = w;
             }
         }
+        match self.style.top {
+            DIMEN::PERCENT(percent) => {
+                if self.content_width == FIT_CONTENT {
+                    self.top = 0; // to be calculated later
+                }
+                self.top = (self.content_width as f32 * percent).floor() as i32;
+            }
+            DIMEN::INT(w) => {
+                self.top = w;
+            }
+        }
+        match self.style.left {
+            DIMEN::PERCENT(percent) => {
+                if self.content_height == FIT_CONTENT {
+                    self.margintop = 0; // to be calculated later
+                }
+                self.left = (self.content_height as f32 * percent).floor() as i32;
+            }
+            DIMEN::INT(w) => {
+                self.left = w;
+            }
+        }
     }
 
     fn destroy_basic_struct(&mut self) {
@@ -487,7 +536,8 @@ impl IView {
                     // if parent dimension is not defined i.e. depends on child itself then error
                     if parent_width < 0 {
                         panic!(
-                            "Circular dependence on dimensions: Parent does not have a dimension, while child depends on it. <Some Debug Info>"
+                            "Circular dependence on dimensions: Parent does not have a dimension, while child depends on it. <Some Debug Info> {:p}",
+                            self
                         )
                     }
 
@@ -534,12 +584,8 @@ impl IView {
             self.fill_box_infos();
 
             // update height and width
-            if self.height == FIT_CONTENT {
-                self.height = self.content_height;
-            }
-            if self.width == FIT_CONTENT {
-                self.width = self.content_width;
-            }
+            self.height = self.content_height;
+            self.width = self.content_width;
 
             // if visibility set to VISIBLE then update the content dimensions
             if matches!(self.style.scroll, OVERFLOWBEHAVIOUR::VISIBLE) {
@@ -557,9 +603,9 @@ impl IView {
             self.children_height = cheight + self.extray;
             self.children_width = cwidth + self.extrax;
             // LOGLn!(
-            //     "{} {} : {} {} {}",
-            //     self.height, self.width, self.content_height, self.content_width ,self.style.render
-            // ));
+            //     "{:p} {} {} : {} {} {} {} {} {}",
+            //     self, self.height, self.width, self.content_height, self.content_width ,self.extrax, self.extray, self.paddingbottom, self.paddingtop
+            // );
         }
 
         (self.height, self.width, changed)
@@ -573,13 +619,17 @@ impl IView {
         child_render_box: &mut RenderBox,
         top_left: &(i32, i32),
         last_cusor: &(i32, i32),
-        margin: &(i32, i32, i32, i32),
+        margin: &(i32, i32, i32, i32, i32, i32),
     ) -> RenderBox {
         let mut curr_render_box = RenderBox {
-            toplefty: child_render_box.toplefty + top_left.0 - self.scrolly + margin.0,
-            topleftx: child_render_box.topleftx + top_left.1 - self.scrollx + margin.2,
-            bottomrighty: child_render_box.bottomrighty + top_left.0 - self.scrolly + margin.0,
-            bottomrightx: child_render_box.bottomrightx + top_left.1 - self.scrollx + margin.2,
+            toplefty: child_render_box.toplefty + top_left.0 - self.scrolly + margin.0 + margin.4,
+            topleftx: child_render_box.topleftx + top_left.1 - self.scrollx + margin.2 + margin.5,
+            bottomrighty: child_render_box.bottomrighty + top_left.0 - self.scrolly
+                + margin.0
+                + margin.4,
+            bottomrightx: child_render_box.bottomrightx + top_left.1 - self.scrollx
+                + margin.2
+                + margin.5,
         };
 
         if curr_render_box.toplefty < 0 {
@@ -627,10 +677,7 @@ impl IView {
      * uses DOCUMENT.lock()
      */
     pub(crate) fn __render__(&mut self) -> (RenderBox, WINDOW) {
-        let mut topleft = (
-            self.paddingtop + self.style.border,
-            self.paddingleft + self.style.border,
-        ); // virtual screen
+        let mut topleft = (self.paddingtop, self.paddingleft); // virtual screen
         let mut last_cursor = (
             self.content_height + self.extray - (self.style.border * 2) - 1, // do not consider the borderwidth in the lastcursor of this window
             self.content_width + self.extrax - (self.style.border * 2) - 1,
@@ -676,7 +723,7 @@ impl IView {
                     };
                     win_t
                 };
-                LOGLn!("{}", icomponents.len());
+                // LOGLn!("{}", icomponents.len());
 
                 if self.style.render {
                     // then we need to render this window itself
@@ -699,92 +746,144 @@ impl IView {
                 icomponents.iter().for_each(|child_lk| {
                     // calls the render function of child if it's bounds are within the view port of this window
                     // gets the width covered by the child
-                    if topleft.0 >= scroll_end_cursor.0 || topleft.1 >= scroll_end_cursor.1 {
-                        LOGLn!(
-                            "SEND {:p} {:?} {:?} {}",
-                            self,
-                            topleft,
-                            scroll_end_cursor,
-                            self.content_height
-                        );
-                        return;
-                    }
-
-                    let prevtopleft = topleft.clone();
-
-                    let margin = {
+                    if {
                         let child = child_lk.lock().unwrap();
+                        matches!(child.style.position, POSITION::STATIC)
+                    } {
+                        if topleft.0 >= scroll_end_cursor.0 || topleft.1 >= scroll_end_cursor.1 {
+                            // LOGLn!(
+                            //     "SEND {:p} {:?} {:?} {}",
+                            //     self,
+                            //     topleft,
+                            //     scroll_end_cursor,
+                            //     self.content_height
+                            // );
+                            return;
+                        }
+
+                        let prevtopleft = topleft.clone();
+
+                        let margin = {
+                            let child = child_lk.lock().unwrap();
+                            match direction {
+                                FLEXDIRECTION::VERTICAL => {
+                                    topleft.0 += child.height + self.margintop;
+                                }
+                                FLEXDIRECTION::HORIZONTAL => {
+                                    topleft.1 += child.width + self.marginleft;
+                                }
+                            }
+                            (
+                                child.margintop,
+                                child.marginbottom,
+                                child.marginleft,
+                                child.marginright,
+                                0,
+                                0,
+                            )
+                        };
+
+                        if topleft.0 < self.scrolly || topleft.1 < self.scrollx {
+                            // LOGLn!(
+                            //     "SEND {:p} {:?} {:?} {} {}",
+                            //     self,
+                            //     topleft,
+                            //     self.scrolly,
+                            //     self.scrollx,
+                            //     self.content_height
+                            // );
+                            // if visible is set true then its scrollx and scrolly will already be 0
+                            return;
+                        }
+
+                        // either within the limits or is not static
+                        let (mut render_box, child_win) =
+                            child_lk.clone().lock().unwrap().__render__();
+
+                        // update the render box
+                        let mut curr_box = self.corrected_render_box(
+                            &mut render_box,
+                            &prevtopleft,
+                            &last_cursor,
+                            &margin,
+                        );
+
+                        // LOGLn!(
+                        //     "{:p} {:?} {:?} {:?} {}",
+                        //     self,
+                        //     render_box,
+                        //     curr_box,
+                        //     prevtopleft,
+                        //     self.marginleft
+                        // );
+
+                        // need to consider the flex direction
+                        // place the child at current top and left position
+                        copywin(
+                            child_win,
+                            *win,
+                            render_box.toplefty,
+                            render_box.topleftx,
+                            curr_box.toplefty + self.style.border,
+                            curr_box.topleftx + self.style.border,
+                            curr_box.bottomrighty + self.style.border,
+                            curr_box.bottomrightx + self.style.border,
+                            0,
+                        );
+
+                        curr_box.add_to_all(self.style.border);
+
+                        child_lk.lock().unwrap().destroy_basic_struct();
+
                         match direction {
                             FLEXDIRECTION::VERTICAL => {
-                                topleft.0 += child.height + self.margintop;
+                                topleft.0 += margin.1;
                             }
                             FLEXDIRECTION::HORIZONTAL => {
-                                topleft.1 += child.width + self.marginleft;
+                                topleft.1 += margin.3;
                             }
                         }
-                        (
-                            child.margintop,
-                            child.marginbottom,
-                            child.marginleft,
-                            child.marginright,
-                        )
-                    };
 
-                    if topleft.0 < self.scrolly || topleft.1 < self.scrollx {
-                        LOGLn!(
-                            "SEND {:p} {:?} {:?} {} {}",
-                            self,
-                            topleft,
-                            self.scrolly,
-                            self.scrollx,
-                            self.content_height
+                        curr_render_box.update(&curr_box);
+                    } else {
+                        let (margin, (mut render_box, child_win)) = {
+                            let mut child = child_lk.lock().unwrap();
+                            (
+                                (
+                                    child.margintop,
+                                    child.marginbottom,
+                                    child.marginleft,
+                                    child.marginright,
+                                    child.top,
+                                    child.left,
+                                ),
+                                child.__render__(),
+                            )
+                        };
+
+                        // update the render box
+                        let curr_box = self.corrected_render_box(
+                            &mut render_box,
+                            &(self.scrolly, self.scrollx),
+                            &last_cursor,
+                            &margin,
                         );
-                        // if visible is set true then its scrollx and scrolly will already be 0
-                        return;
+
+                        copywin(
+                            child_win,
+                            *win,
+                            render_box.toplefty,
+                            render_box.topleftx,
+                            curr_box.toplefty,
+                            curr_box.topleftx,
+                            curr_box.bottomrighty,
+                            curr_box.bottomrightx,
+                            0,
+                        );
+
+                        child_lk.lock().unwrap().destroy_basic_struct();
+                        curr_render_box.update(&curr_box);
                     }
-
-                    let (mut render_box, child_win) = child_lk.clone().lock().unwrap().__render__();
-                    // update the render box
-                    let curr_box = self.corrected_render_box(
-                        &mut render_box,
-                        &prevtopleft,
-                        &last_cursor,
-                        &margin,
-                    );
-                    LOGLn!(
-                        "{:p} {:?} {:?} {:?}",
-                        self,
-                        render_box,
-                        curr_box,
-                        prevtopleft
-                    );
-
-                    // need to consider the flex direction
-                    // place the child at current top and left position
-                    copywin(
-                        child_win,
-                        *win,
-                        render_box.toplefty,
-                        render_box.topleftx,
-                        curr_box.toplefty + self.style.border,
-                        curr_box.topleftx + self.style.border,
-                        curr_box.bottomrighty + self.style.border,
-                        curr_box.bottomrightx + self.style.border,
-                        0,
-                    );
-
-                    child_lk.lock().unwrap().destroy_basic_struct();
-
-                    match direction {
-                        FLEXDIRECTION::VERTICAL => {
-                            topleft.0 += margin.1;
-                        }
-                        FLEXDIRECTION::HORIZONTAL => {
-                            topleft.1 += margin.3;
-                        }
-                    }
-
-                    curr_render_box.update(&curr_box);
                 });
                 // if self.style.render {
                 //     wrefresh(*win);
@@ -813,6 +912,7 @@ impl IView {
                         box_(*win, 0, 0);
                         wattroff(*win, COLOR_PAIR(border_color)); // setting off border_pair
                     }
+                    // LOGLn!("{} {} {:?} {:?}", self.children_height, self.children_width, topleft, last_cursor);
                     let pad = newpad(self.children_height, self.children_width);
 
                     // then we need to render this window itself
@@ -832,8 +932,8 @@ impl IView {
                         *win,
                         self.scrolly,
                         self.scrollx,
-                        topleft.0 + self.style.border,
-                        topleft.1 + self.style.border,
+                        topleft.0,
+                        topleft.1,
                         last_cursor.0 - self.paddingbottom + self.style.border,
                         last_cursor.1 - self.paddingright + self.style.border,
                         0,
@@ -862,11 +962,9 @@ impl IView {
             if mevent.bstate & BUTTON1_PRESSED as u32 > 0 {
                 // left mouse clicked
                 if self.style.taborder >= 0 {
-
                     // generate a tab event which will change focus and call handler itself
                     DOCUMENT.lock().unwrap().next_tab_id = self.id;
                     ungetch('\t' as i32);
-                    
                 }
             } else if (mevent.bstate & BUTTON2_PRESSED as u32 == 0)
                 && matches!(self.style.scroll, OVERFLOWBEHAVIOUR::SCROLL)
@@ -893,13 +991,13 @@ impl IView {
             match event.key {
                 // natural scrolling
                 KEY_UP => scroll_direction = 1,
-                KEY_RIGHT => scroll_direction = 2,
+                KEY_RIGHT => scroll_direction = 3,
                 KEY_LEFT => scroll_direction = 2,
                 KEY_DOWN => scroll_direction = 0,
                 _ => {}
             }
         };
-        LOGLn!("{:p} {} {}", self,scroll_direction, vertical);
+        // LOGLn!("{:p} {} {} {} {}",self, self.scrolly, self.children_height,self.content_height, self.extray);
         match scroll_direction {
             0 => {
                 // scroll up
@@ -938,6 +1036,160 @@ impl IView {
         }
     }
 
+    /** Finds the child under the event and transfers it to the child */
+    fn transfer_event(&mut self, event: &mut EVENT) {
+        let mut topleft = (self.paddingtop, self.paddingleft); // virtual screen
+        let mut last_cursor = (
+            self.content_height + self.extray - (self.style.border * 2) - 1, // do not consider the borderwidth in the lastcursor of this window
+            self.content_width + self.extrax - (self.style.border * 2) - 1,
+        );
+        // do not consider the padding along the direction
+
+        last_cursor.0 = last_cursor.0.max(0);
+        last_cursor.1 = last_cursor.1.max(0);
+
+        let (actualx, actualy) = (event.clientx, event.clienty);
+
+        let direction = &self.style.flex_direction;
+
+        match &self.content {
+            IViewContent::CHIDREN(icomponents) => {
+                let scroll_end_cursor = (
+                    self.scrolly + self.content_height + self.extray,
+                    self.scrollx + self.content_width + self.extrax,
+                );
+
+                // loop over the children
+                icomponents.iter().for_each(|child_lk| {
+                    // calls the render function of child if it's bounds are within the view port of this window
+                    // gets the width covered by the child
+                    if {
+                        let child = child_lk.lock().unwrap();
+                        matches!(child.style.position, POSITION::STATIC)
+                    } {
+                        if topleft.0 >= scroll_end_cursor.0 || topleft.1 >= scroll_end_cursor.1 {
+                            return;
+                        }
+
+                        let prevtopleft = topleft.clone();
+
+                        let (margin, mut render_box) = {
+                            let child = child_lk.lock().unwrap();
+                            match direction {
+                                FLEXDIRECTION::VERTICAL => {
+                                    topleft.0 += child.height + self.margintop;
+                                }
+                                FLEXDIRECTION::HORIZONTAL => {
+                                    topleft.1 += child.width + self.marginleft;
+                                }
+                            }
+                            let render_box = RenderBox {
+                                topleftx: 0,
+                                toplefty: 0,
+                                bottomrightx: child.width - 1,
+                                bottomrighty: child.height - 1,
+                            };
+                            // LOG!("{:p} {:?} ",&*child, render_box);
+                            (
+                                (
+                                    child.margintop,
+                                    child.marginbottom,
+                                    child.marginleft,
+                                    child.marginright,
+                                    0,
+                                    0,
+                                ),
+                                render_box,
+                            )
+                        };
+
+                        if topleft.0 < self.scrolly || topleft.1 < self.scrollx {
+                            // if visible is set true then its scrollx and scrolly will already be 0
+                            return;
+                        }
+
+                        // update the render box
+                        let mut curr_box = self.corrected_render_box(
+                            &mut render_box,
+                            &prevtopleft,
+                            &last_cursor,
+                            &margin,
+                        );
+
+                        curr_box.add_to_all(self.style.border);
+
+                        // LOGLn!("{:?} {}", curr_box, self.style.border);
+                        
+                        // now check whether this box fells under the event constraints
+                        if curr_box.is_inside((event.clienty, event.clientx)) {
+                            event.clientx -= prevtopleft.0 - self.scrolly + self.style.border;
+                            event.clienty -= prevtopleft.1 - self.scrolly + self.style.border;
+                            let mut child = child_lk.lock().unwrap();
+                            if matches!(child.style.scroll, OVERFLOWBEHAVIOUR::SCROLL) {
+                                DOCUMENT.lock().unwrap().set_active(child_lk.clone());
+                            }
+                            child.__handle_mouse_event__(event);
+                            // now call child's event_handler
+                            event.clientx = actualx;
+                            event.clienty = actualy;
+                        }
+                        
+                        match direction {
+                            FLEXDIRECTION::VERTICAL => {
+                                topleft.0 += margin.1;
+                            }
+                            FLEXDIRECTION::HORIZONTAL => {
+                                topleft.1 += margin.3;
+                            }
+                        }
+                    } else {
+                        let (margin, mut render_box) = {
+                            let child = child_lk.lock().unwrap();
+                            
+                            let render_box = RenderBox {
+                                topleftx: 0,
+                                toplefty: 0,
+                                bottomrightx: child.width - 1,
+                                bottomrighty: child.height - 1,
+                            };
+                            // LOG!("{:p} {:?} ",&*child, render_box);
+                            (
+                                (
+                                    child.margintop,
+                                    child.marginbottom,
+                                    child.marginleft,
+                                    child.marginright,
+                                    child.top,
+                                    child.left,
+                                ),
+                                render_box,
+                            )
+                        };
+                        
+                        // update the render box
+                        let curr_box = self.corrected_render_box(
+                            &mut render_box,
+                            &(self.scrolly, self.scrollx),
+                            &last_cursor,
+                            &margin,
+                        );
+                        // LOGLn!("{:?}", curr_box);
+
+                        
+                        if curr_box.is_inside((event.clienty, event.clientx)) {
+                            let mut child = child_lk.lock().unwrap();
+                            if matches!(child.style.scroll, OVERFLOWBEHAVIOUR::SCROLL) {
+                                DOCUMENT.lock().unwrap().set_active(child_lk.clone());
+                            }
+                            child.__handle_mouse_event__(event);
+                        }
+                    }
+                });
+            }
+            IViewContent::TEXT(txt) => {}
+        }
+    }
+
     /**
      * handles the given mouse event. Do not pass a non mouse event
      * returns whether to propogate bubbling or not
@@ -951,76 +1203,23 @@ impl IView {
             };
         }
 
+        // LOGLn!("{:p} {:?}", self, event);
         // handle capture
         self.style.handle_event(event, true);
         if !event.propogate {
             return;
         }
 
-        let (actualx, actualy) = (event.clientx, event.clienty);
-
-        let mut clientx = event.clientx - self.paddingleft;
-        let mut clienty = event.clienty - self.paddingtop;
-
         if event.default {
             self.handle_default(event);
         }
 
-        let direction = &self.style.flex_direction;
-
-        if clientx >= 0 && clienty >= 0 {
-            // else clicked on padding area
-
-            // find the child under the event
-            match &self.content {
-                IViewContent::CHIDREN(items) => {
-                    for child_lk in items {
-                        let mut child = child_lk.lock().unwrap();
-                        let cheight = child.height;
-                        let cwidth = child.width;
-                        match direction {
-                            FLEXDIRECTION::VERTICAL => {
-                                if clienty - cheight < 0 {
-                                    // update the event obj
-                                    event.clientx = clientx;
-                                    event.clienty = clienty;
-                                    if matches!(child.style.scroll, OVERFLOWBEHAVIOUR::SCROLL){
-                                        LOGLn!("{:p}", &*child);
-                                        DOCUMENT.lock().unwrap().set_active(child_lk.clone());
-                                    }
-                                    child.__handle_mouse_event__(event);
-                                    break;
-                                }
-                                clienty -= cheight;
-                            }
-                            FLEXDIRECTION::HORIZONTAL => {
-                                if clientx - cwidth < 0 {
-                                    event.clientx = clientx;
-                                    event.clienty = clienty;
-                                    if matches!(child.style.scroll, OVERFLOWBEHAVIOUR::SCROLL){
-                                        DOCUMENT.lock().unwrap().set_active(child_lk.clone());
-                                    }
-                                    child.__handle_mouse_event__(event);
-                                    break;
-                                }
-                                clientx -= cwidth;
-                            }
-                        }
-                    }
-                }
-                IViewContent::TEXT(_) => {
-                    // handled
-                }
-            }
-        }
+        // find the child under the event
+        self.transfer_event(event);
 
         if self.style.render {
             DOCUMENT.lock().unwrap().changed = true;
         }
-
-        // now call child's event_handler
-        event.clientx = actualx;
-        event.clienty = actualy;
 
         // handle bubble
         if event.propogate {
