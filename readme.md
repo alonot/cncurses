@@ -176,6 +176,8 @@ The library looks up for changes in `Fiber` tree, and then updates and render th
 - `SetState` expects curr_fiber to be set and uses it accordingly to either create a new State or return already present State.
 - Contains Reference to the `IView` tree and updates/Creates the tree.
 
+- `check_for_change` gets the previous scroll position of the `IView` if they are changed
+
 #### IView
 
 - Manages the Actual Ncurses window.

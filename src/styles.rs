@@ -15,6 +15,7 @@ pub struct CSSStyle<'a> {
     pub background_color: i16,
     pub color: i16,
     pub flex: u32,
+    pub flex_wrap: bool,
     pub flex_direction: &'a str,
     pub taborder: i32,
     pub border_color: i16,
@@ -39,6 +40,7 @@ impl<'a> Default for CSSStyle<'a> {
             boxsizing: Default::default(),
             background_color: -1,
             color: -1,
+            flex_wrap: false,
             flex: 0,
             taborder: -1,
             border_color: -1,
@@ -143,6 +145,7 @@ impl<'a> CSSStyle<'a> {
             style.marginright = take(&mut dimens[3]);
         }
         style.z_index = self.z_index;
+        style.flex_wrap = self.flex_wrap;
         style.background_color = self.background_color;
         style.border = self.border;
         style.border_color = self.border_color;
@@ -171,7 +174,7 @@ impl<'a> CSSStyle<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum DIMEN {
     INT(i32),
     PERCENT(f32),
@@ -205,7 +208,7 @@ impl DIMEN {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct Style {
     pub(crate) height: DIMEN,
     pub(crate) width: DIMEN,
@@ -220,14 +223,15 @@ pub(crate) struct Style {
     pub(crate) marginright: DIMEN,
     pub(crate) marginbottom: DIMEN,
 
-    pub(crate) position: POSITION,
+    pub(crate) flex: u32,
+    pub(crate) flex_wrap: bool,
     pub(crate) border: i32,
     pub(crate) border_color: i16,
     pub(crate) color: i16,
     pub(crate) background_color: i16,
     pub(crate) taborder: i32,
+    pub(crate) position: POSITION,
     pub(crate) boxsizing: BOXSIZING,
-    pub(crate) flex: u32,
     pub(crate) flex_direction: FLEXDIRECTION,
     pub(crate) z_index: i32,
     pub(crate) onclick_bubble: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + 'static>>>, // should be a clousure
@@ -262,6 +266,7 @@ impl Style {
             marginbottom: DIMEN::default(),
             border: 0,
             border_color: -1,
+            flex_wrap: false,
             color: -1,
             background_color: -2,
             flex_direction: FLEXDIRECTION::default(),
@@ -304,6 +309,7 @@ impl Style {
             STYLE::TEXTCOLOR(bg) => self.color = bg,
             STYLE::BORDERCOLOR(bg) => self.border_color = bg,
             STYLE::ZINDEX(z) => self.z_index = z,
+            STYLE::FLEXWRAP(f) => self.flex_wrap = f,
             STYLE::OVERFLOW(overflow_behaviour) => self.overflow = overflow_behaviour,
         }
     }
@@ -369,7 +375,7 @@ impl Default for OVERFLOWBEHAVIOUR {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum FLEXDIRECTION {
     VERTICAL,
     HORIZONTAL,
@@ -381,7 +387,7 @@ impl Default for FLEXDIRECTION {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum POSITION {
     STATIC,
     RELATIVE,
@@ -393,6 +399,7 @@ impl Default for POSITION {
     }
 }
 
+#[derive(Debug,Clone, Copy)]
 pub enum BOXSIZING {
     /** The padding is taken within the content dimensions. If height is set to FITCONTENT then boxsizing will be forced to border box for height. Similarly for width too. */
     BORDERBOX,
@@ -427,6 +434,7 @@ pub enum STYLE {
     BORDERCOLOR(i16),
     BOXSIZING(BOXSIZING),
     POSITION(POSITION),
+    FLEXWRAP(bool),
     /** 0 means unset. Actual Height and width dimensions with INT gets priority over flex. if they are set with PERCEN then flex gets priority. */
     FLEX(u32),
     /**Default Vertical */

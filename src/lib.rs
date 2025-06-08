@@ -19,14 +19,10 @@ use ncurses::{
 };
 use nmodels::iview::IView;
 use std::{
-    any::TypeId,
-    collections::HashMap,
-    fmt::Debug,
-    i32, panic,
-    sync::{Arc, LazyLock, Mutex},
+    any::TypeId, collections::HashMap, fmt::Debug, i32, mem::take, panic, sync::{Arc, LazyLock, Mutex}
 };
 
-use crate::{interfaces::Document, nmodels::iview};
+use crate::{interfaces::Document, nmodels::iview, styles::Style};
 use crate::interfaces::{BASICSTRUCT, EVENT};
 use crate::styles::DIMEN;
 use crate::styles::STYLE;
@@ -387,6 +383,7 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> b
 
         component = fiber.component.clone();
     }
+    let mut newly_created = false;
 
     if changed {
         let iview = if let Some(base_lk) = convert_to_icomponent(&component) {
@@ -513,6 +510,7 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> b
                 // create new tree
                 let child_fiber_lk = create_tree(new_node, parent, false); // somewhere inside the IView would get filled by its child_lk
 
+                newly_created = true;
                 // // add this new fiber as child_lk
                 fiber.children.clear(); // destroys the previous sub-tree from this node
                 fiber.children.push(child_fiber_lk); // adds the new sub_tree
@@ -560,11 +558,18 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> b
 
             }
             REMOVEINDEX.lock().unwrap().push(prev_iview.lock().unwrap().id);
+            
+            if !newly_created {
+                let mut iv = iview.lock().unwrap();
+                iv.fill_box_infos_from_other(&prev_iview.lock().unwrap());
+            }
+
         }
 
         // // add this iview to this fiber
-        iview.lock().unwrap().style.render = true;
-        fiber.iview = Some(iview);
+        let mut iv = iview.lock().unwrap();
+        iv.style.render = true;
+        fiber.iview = Some(iview.clone());
     } else {
         {
             let fiber = fiber_lk.lock().unwrap();

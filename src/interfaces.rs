@@ -381,7 +381,7 @@ impl Document {
             if self.tabindex > self.taborder.len() {
                 self.tabindex = 0;
             }
-            LOGLn!("{} {}", self.tabindex, self.taborder.len());
+            // LOGLn!("{} {}", self.tabindex, self.taborder.len());
             (prev_iview_lk, self.focused_element())
         }
     }
