@@ -1,15 +1,14 @@
 use std::{
     any::Any,
+    clone,
     collections::HashMap,
     sync::{Arc, LazyLock, Mutex},
 };
 
 use dyn_clone::DynClone;
-use ncurses::{
-    MENU, MEVENT, PANEL, WINDOW, init_pair, newwin,
-};
+use ncurses::{MENU, MEVENT, PANEL, WINDOW, init_pair, newwin};
 
-use crate::{nmodels::iview::IView};
+use crate::{_debug_iview, LOGLn, nmodels::iview::IView};
 
 pub trait Stateful: DynClone + Any + Send {
     fn as_any(&self) -> &dyn Any;
@@ -105,17 +104,17 @@ impl EVENT {
         }
     }
 
-    pub fn get_mevent(& self) -> &Option<MEVENT> {
+    pub fn get_mevent(&self) -> &Option<MEVENT> {
         &self.mevent
     }
 
-    pub fn get_key(& self) -> i32 {
+    pub fn get_key(&self) -> i32 {
         self.key
     }
-    pub fn get_clientx(& self) -> i32 {
+    pub fn get_clientx(&self) -> i32 {
         self.clientx
     }
-    pub fn get_clienty(& self) -> i32 {
+    pub fn get_clienty(&self) -> i32 {
         self.clienty
     }
 
@@ -181,7 +180,6 @@ pub struct Document {
     /** If any iview calls focus then this is set to its id. used by focus */
     pub(crate) next_tab_id: i32,
 
-
     pub(crate) color_pairs: LazyLock<Mutex<HashMap<(i16, i16), u16>>>,
     // pub(crate) colors: LazyLock<Mutex<HashMap<(i16, i16, i16), u16>>>,
     pub(crate) total_allowed_pairs: i32,
@@ -203,6 +201,13 @@ impl Document {
 
     pub(crate) fn set_active(&mut self, iview: Arc<Mutex<IView>>) {
         self.curr_active = Some(iview);
+    }
+
+    pub(crate) fn is_active(&mut self, iview: &Arc<Mutex<IView>>) -> bool {
+        if let Some(act) = &self.curr_active {
+            return Arc::as_ptr(act).eq(&Arc::as_ptr(&iview));
+        }
+        false
     }
 
     pub(crate) fn clear_active(&mut self) {
@@ -297,6 +302,14 @@ impl Document {
     /** Uses element.lock() */
     pub(crate) fn insert_tab_element(&mut self, element: Arc<Mutex<IView>>) {
         let id = element.lock().unwrap().id;
+        if let Some(_) = self.taborder.iter().find(|ielement| ielement.id == id) {
+            return;
+        }
+        // else this would pick up an element after taborder length is increase due to push
+        if self.tabindex == self.taborder.len() {
+            self.tabindex += 1;
+        }
+
         self.taborder.push(TabElement {
             id: id,
             iview: element,
@@ -306,33 +319,50 @@ impl Document {
     /**creates the tab order using the inserted elements so far */
     pub(crate) fn create_tab_order(&mut self) {
         self.taborder
-            .sort_by_key(|c| c.iview.lock().unwrap().style.taborder);
+            .sort_by_key(|c| -c.iview.lock().unwrap().style.taborder);
     }
 
     pub(crate) fn remove_id(&mut self, id: &i32) {
-        if let Some(idx) = self
-        .taborder
-        .iter()
-        .position(|ielement| ielement.id == *id)
-        {
+        if let Some(idx) = self.taborder.iter().position(|ielement| ielement.id == *id) {
+            // //// removing the children
+            let element = &self.taborder[idx];
+            let iview = &element.iview;
+            let mut to_remove = vec![];
+            match &iview.lock().unwrap().content {
+                IViewContent::CHIDREN(items) => {
+                    items.iter().for_each(|child| {
+                        to_remove.push({ child.lock().unwrap().id });
+                    });
+                }
+                IViewContent::TEXT(_) => {
+                    // no children do nothing
+                }
+            }
+
+            to_remove.iter().for_each(|id| {
+                self.remove_id(id);
+            });
+
+            ///////
+
             self.taborder.remove(idx);
-            if self.tabindex > idx  {
-                self.tabindex -= 1;
-            } else if self.tabindex == idx {
+
+            if self.tabindex == idx {
+                // going out
                 self.tabindex = self.taborder.len();
             }
-        } 
+        }
     }
 
     /**returns the id of previous tab element
-     * -1 if none. 
+     * -1 if none.
      */
     pub(crate) fn _clear_tab_order(&mut self) -> i32 {
         let mut prev_id = -1;
         if let Some(prev_iview_lk) = self.focused_element() {
             prev_id = prev_iview_lk.lock().unwrap().id;
         };
-        self.tabindex = 0;
+        // self.tabindex = 0;
         self.taborder.clear();
         self.next_tab_id = -1;
         // LOGLn!("ZERO");
@@ -340,7 +370,7 @@ impl Document {
     }
 
     /**Locks the iview */
-    pub(crate) fn advance_tab(&mut self) -> (Option<Arc<Mutex<IView>>>, Option<Arc<Mutex<IView>>>){
+    pub(crate) fn advance_tab(&mut self) -> (Option<Arc<Mutex<IView>>>, Option<Arc<Mutex<IView>>>) {
         let prev_iview_lk = self.focused_element();
         // LOGLn!("START: {} {} {}", self.tabindex, self.taborder.len(), self.next_tab_id);
         if self.next_tab_id != -1 {
@@ -348,26 +378,23 @@ impl Document {
         } else {
             self.tabindex += 1;
             self.next_tab_id = -1;
-            if self.tabindex == self.taborder.len() {
-                // no element focused
-            }
-            else if self.tabindex > self.taborder.len() {
+            if self.tabindex > self.taborder.len() {
                 self.tabindex = 0;
             }
-            // LOGLn!("{} {}", self.tabindex, self.taborder.len());
+            LOGLn!("{} {}", self.tabindex, self.taborder.len());
             (prev_iview_lk, self.focused_element())
         }
     }
-    
+
     /** Change the focus to given current next_tab_id if available
      * else set index to list end
      */
     pub(crate) fn focus(&mut self) -> (Option<Arc<Mutex<IView>>>, Option<Arc<Mutex<IView>>>) {
         let prev_iview_lk = self.focused_element();
         if let Some(idx) = self
-        .taborder
-        .iter()
-        .position(|ielement| ielement.id == self.next_tab_id)
+            .taborder
+            .iter()
+            .position(|ielement| ielement.id == self.next_tab_id)
         {
             self.tabindex = idx;
         } else {
@@ -377,15 +404,17 @@ impl Document {
         (prev_iview_lk, self.focused_element())
     }
 
-    /**
-     * May Overflow
-     */
-    pub(crate) fn focused_element(&self) -> Option<Arc<Mutex<IView>>> {
-        if self.taborder.is_empty() {
-            return None;
-        }
+    pub(crate) fn update_focused_iview(&mut self, iview: Arc<Mutex<IView>>, id: i32) {
         if self.tabindex >= self.taborder.len() {
-            return  None;
+            return;
+        }
+        self.taborder[self.tabindex].iview = iview;
+        self.taborder[self.tabindex].id = id;
+    }
+
+    pub(crate) fn focused_element(&self) -> Option<Arc<Mutex<IView>>> {
+        if self.tabindex >= self.taborder.len() {
+            return None;
         }
         Some(self.taborder[self.tabindex].iview.clone())
     }

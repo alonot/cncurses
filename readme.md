@@ -116,16 +116,23 @@ Event listeners get an event object
 one can stop the propogation of event using `event_object.stop_propogation`
 and prevent default behaviour using `event_object.prevent_default`
 
+##### z-index:
+
+- Not implemented yet, However, keeping negative z-index of a child inside a `View` will result in rendering of the child before border is placed.
+
+
 #### Focus
 
 One can use tab to focus on focusable element. An element can be made focusable by setting a non-negative `taborder` style property.
 The main use and aim of this feature is in future when library enable support for `Forms`
+`check_for_change` function have to update the Iview of current focused element and curr_active element if they have been changed.
 
 #### Scrolling with Keyboard
 
 - Whenever users clicks on any view the deepest child with overflow set to scroll becomes current `active` iview.
 - On further interactions with keyboard UP, DOWN, RIGHT,LEFT, this currect `active` child's scroll behaviour is triggered.
 - When an elements comes into focus through tab, and it is scrollable then current `active` is set to that same element.
+
 
 ## Fote Note
 
@@ -182,8 +189,6 @@ The IView tree contains the basic ncurses WINDOW to render the contents. If ther
 The actual rendering is done by **render** method. It returns (topleftx, toplefty, lines, col) depicting the dirty rectangle, which has been rendered by itself or by its children. It is clear that on first call to **render** this area will eventually be the area of whole screen. Parent copies the window of child into itself using two information. 1. bounds given by children, 2. its own scroll position.
 
 This copying may be more optimized by returning a list of non-overlapping bounds. However, the cost of multiple call to copywin() has to be taken to account then.
-
-#### Internals:
 
 - All texts will use **pad**
 
@@ -267,6 +272,11 @@ To keep default terminal color use negative number (every color is set to -1 by 
 
 - Manages the global state of the app.
 - Only public function of Document is `get_color`
+
+#### Setting Active
+
+- When user sets up onfocus and changes the state, this may trigger changing of whole internal tree, leading to loss of previous active element. Hence before updating the internal tree, we check if this element was the one which was active before then we replace the curr_active with the new `IView`
+
 
 #### Known Issues:
 

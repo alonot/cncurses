@@ -26,7 +26,7 @@ use std::{
     sync::{Arc, LazyLock, Mutex},
 };
 
-use crate::interfaces::Document;
+use crate::{interfaces::Document, nmodels::iview};
 use crate::interfaces::{BASICSTRUCT, EVENT};
 use crate::styles::DIMEN;
 use crate::styles::STYLE;
@@ -106,21 +106,26 @@ fn initialize() {
     refresh();
 }
 
+fn _debug_iview(iview:&std::sync::MutexGuard<'_, IView>) {
+    LOGLn!(
+        "IView_{}({}, ::{:p} {:?} {})",
+        iview.id,
+        iview.style.render,
+        &**iview,
+        iview.style.background_color,
+        iview.children.len()
+    );
+}
+
 fn _debug_tree(node: Arc<Mutex<IView>>, tabs: i32) {
-    let iview = node.lock().unwrap();
+    let iview: std::sync::MutexGuard<'_, IView> = node.lock().unwrap();
     for _ in 0..tabs {
         LOG!("\t");
     }
     LOG!("|-");
     match &iview.content {
         interfaces::IViewContent::CHIDREN(items) => {
-            LOGLn!(
-                "IView_{}({}, ::{:p} {:?})",
-                iview.id,
-                iview.style.render,
-                &*iview,
-                iview.style.background_color
-            );
+            _debug_iview(&iview);
             items.iter().for_each(|child| {
                 _debug_tree(child.clone(), tabs + 1);
             });
@@ -146,13 +151,13 @@ fn _debug_fiber(node: Arc<Mutex<Fiber>>) {
     };
     let fiber = node.lock().unwrap();
     LOGLn!(
-        "Fiber({}, {},{:?}, ::{:p} {:?}): {}",
+        "Fiber({}, {},{:?}, ::{:p} {:?}):",
         fiber.key,
         fiber.changed,
         get_typeid(fiber.component.clone()),
         &*inode.lock().unwrap(),
-        Arc::as_ptr(&node),
-        fiber.state.len()
+        Arc::as_ptr(&node)
+        // fiber.state.len()
     );
 }
 
@@ -541,6 +546,22 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> b
         };
 
         let mut fiber = fiber_lk.lock().unwrap();
+
+        if let Some(prev_iview) = &fiber.iview {
+            let mut document = DOCUMENT.lock().unwrap();
+            if document.is_active(prev_iview) {
+                document.set_active(iview.clone());
+            }
+            if let Some(focus) = document.focused_element() {
+                if Arc::as_ptr(&focus).eq(&Arc::as_ptr(&prev_iview)) {
+                    // if focused then update 
+                    document.update_focused_iview(iview.clone(), iview.lock().unwrap().id);
+                }
+
+            }
+            REMOVEINDEX.lock().unwrap().push(prev_iview.lock().unwrap().id);
+        }
+
         // // add this iview to this fiber
         iview.lock().unwrap().style.render = true;
         fiber.iview = Some(iview);
@@ -607,13 +628,14 @@ fn tree_refresh(root: Arc<Mutex<IView>>) -> (i32, i32, bool) {
     {
         let mut document = DOCUMENT.lock().unwrap();
         document.clear_color_pairs();
-        // document.clear_tab_order()
+        // document._clear_tab_order();
     };
     let res = root.lock().unwrap().__init__(*y, *x);
     if res.2 {
         {
             let mut document = DOCUMENT.lock().unwrap();
             REMOVEINDEX.lock().unwrap().iter().for_each(|id| {
+                // remove this id and its children
                 document.remove_id(id);
             });
             document.create_tab_order();
@@ -680,7 +702,7 @@ pub(crate) fn handle_focus_change(
         if let Some(onfocus) = iview.style.onfocus.clone() {
             onfocus.lock().unwrap()();
         }
-        if matches!(iview.style.scroll, styles::OVERFLOWBEHAVIOUR::SCROLL) {
+        if matches!(iview.style.overflow, styles::OVERFLOWBEHAVIOUR::SCROLL) {
             DOCUMENT.lock().unwrap().set_active(iview_lk.clone());
         }
     }
@@ -703,6 +725,7 @@ fn handle_keyboard_event(ch: i32) -> bool {
     const TAB: i32 = '\t' as i32;
 
     if event.default {
+        
         match ch {
             KEY_BTAB | KEY_CTAB | KEY_STAB | KEY_CATAB | TAB => {
                 let (prev_iview, new_iview) = {
@@ -870,24 +893,25 @@ pub fn run(app: impl Component) {
         // if change, get the tree from the app.
         // diff the tree to get the changed components
         let mut changed = diff_n_update(root.clone());
+        // handle click and scroll
+        if handle_events(root.clone()) {
+            break;
+        }
+
         changed |= DOCUMENT.lock().unwrap().changed;
 
+        
         // if changes, render the changed portion
         if changed {
-            // _debug_tree(root.clone(), 0);
+            // _debug_tree( root.clone(), 0);
             let _ = tree_refresh(root.clone());
             // {
             //     let Some(fiber) = DOCUMENT.lock().unwrap().curr_fiber.clone() else {
             //         panic!("No fiber")
             //     };
 
-            //     debug_fiber_tree(fiber.clone(), 0);
+            //     _debug_fiber_tree(fiber.clone(), 0);
             // }
-        }
-
-        // handle click and scroll
-        if handle_events(root.clone()) {
-            break;
         }
     }
 

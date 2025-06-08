@@ -25,7 +25,7 @@ pub struct CSSStyle<'a> {
     pub left: &'a str,
     pub height: &'a str,
     pub width: &'a str,
-    pub scroll: &'a str,
+    pub overflow: &'a str,
     pub z_index: i32,
 }
 
@@ -47,7 +47,7 @@ impl<'a> Default for CSSStyle<'a> {
             left: Default::default(),
             height: Default::default(),
             width: Default::default(),
-            scroll: Default::default(),
+            overflow: Default::default(),
             z_index: 0,
         }
     }
@@ -158,8 +158,8 @@ impl<'a> CSSStyle<'a> {
         if !self.boxsizing.is_empty() {
             style.boxsizing = parse_box_sizing(self.boxsizing);
         }
-        if !self.scroll.is_empty() {
-            style.scroll = parse_overflow(self.scroll);
+        if !self.overflow.is_empty() {
+            style.overflow = parse_overflow(self.overflow);
         }
         if !self.top.is_empty() {
             style.top = parse_dimension(self.top);
@@ -237,7 +237,7 @@ pub(crate) struct Style {
     pub(crate) onfocus: Option<Arc<Mutex<dyn FnMut() + 'static>>>,                  // should be a clousure
     pub(crate) onunfocus: Option<Arc<Mutex<dyn FnMut() + 'static>>>,                // should be a clousure
     pub(crate) render: bool,
-    pub(crate) scroll: OVERFLOWBEHAVIOUR,
+    pub(crate) overflow: OVERFLOWBEHAVIOUR,
 }
 
 unsafe impl Send for Style {}
@@ -277,7 +277,7 @@ impl Style {
             onfocus: None,
             onunfocus: None,
             render: true,
-            scroll: OVERFLOWBEHAVIOUR::HIDDEN,
+            overflow: OVERFLOWBEHAVIOUR::HIDDEN,
         }
     }
     pub(crate) fn set_style(&mut self, v: STYLE) {
@@ -304,7 +304,7 @@ impl Style {
             STYLE::TEXTCOLOR(bg) => self.color = bg,
             STYLE::BORDERCOLOR(bg) => self.border_color = bg,
             STYLE::ZINDEX(z) => self.z_index = z,
-            STYLE::OVERFLOW(overflow_behaviour) => self.scroll = overflow_behaviour,
+            STYLE::OVERFLOW(overflow_behaviour) => self.overflow = overflow_behaviour,
         }
     }
 
