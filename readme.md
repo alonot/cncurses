@@ -77,8 +77,8 @@ This method took too much boilerplate, hence `CSSStyle` class was created.
 
 | CSSStyle Field     | Format                                            | Example                                | Notes                            |
 | ------------------ | ------------------------------------------------- | -------------------------------------- | -------------------------------- |
-| `padding`          | Space-separated values: `"top right bottom left"` | `"10 5 10 5"` or `"10% 5% 10% 5%"`     | Parsed into 4 DIMEN values       |
-| `margin`           | Space-separated values: `"top right bottom left"` | `"20 10 20 10"` or `"5% 2% 5% 2%"`     | Parsed into 4 DIMEN values       |
+| `padding`          | Space-separated values: `"top bottom left right"` | `"10 5 10 5"` or `"10% 5% 10% 5%"`     | Parsed into 4 DIMEN values       |
+| `margin`           | Space-separated values: `"top bottom left right"` | `"20 10 20 10"` or `"5% 2% 5% 2%"`     | Parsed into 4 DIMEN values       |
 | `background_color` | Integer color code                                | `-1` (default/transparent)             | i16 value                        |
 | `color`            | Integer color code                                | `-1` (default)                         | i16 value                        |
 | `flex`             | Unsigned integer                                  | `0` (default), `1`, `2`, etc.          | u32 value                        |

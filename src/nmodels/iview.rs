@@ -17,7 +17,7 @@ use ncurses::{
 use crate::{
     interfaces::{Component, IViewContent, BASICSTRUCT, EVENT}, styles::{
         CSSStyle, Style, BOXSIZING, DIMEN, FIT_CONTENT, FLEXDIRECTION, OVERFLOWBEHAVIOUR, POSITION, STYLE
-    }, LOGLn, DOCUMENT, REMOVEINDEX
+    }, LOGLn, DOCUMENT, LOG, REMOVEINDEX
 };
 
 #[derive(Debug)]
@@ -613,6 +613,7 @@ impl IView {
 
     /**
      * given child box returns the parents box where to render this child
+     * NOTE: Margin, top and left all these are expected to be added by the caller
      */
     fn corrected_render_box(
         &self,
@@ -622,14 +623,10 @@ impl IView {
         margin: &(i32, i32, i32, i32, i32, i32),
     ) -> RenderBox {
         let mut curr_render_box = RenderBox {
-            toplefty: child_render_box.toplefty + top_left.0 - self.scrolly + margin.0 + margin.4,
-            topleftx: child_render_box.topleftx + top_left.1 - self.scrollx + margin.2 + margin.5,
-            bottomrighty: child_render_box.bottomrighty + top_left.0 - self.scrolly
-                + margin.0
-                + margin.4,
-            bottomrightx: child_render_box.bottomrightx + top_left.1 - self.scrollx
-                + margin.2
-                + margin.5,
+            toplefty: child_render_box.toplefty + top_left.0 - self.scrolly ,
+            topleftx: child_render_box.topleftx + top_left.1 - self.scrollx ,
+            bottomrighty: child_render_box.bottomrighty + top_left.0 - self.scrolly,
+            bottomrightx: child_render_box.bottomrightx + top_left.1 - self.scrollx,
         };
 
         if curr_render_box.toplefty < 0 {
@@ -679,8 +676,8 @@ impl IView {
     pub(crate) fn __render__(&mut self) -> (RenderBox, WINDOW) {
         let mut topleft = (self.paddingtop, self.paddingleft); // virtual screen
         let mut last_cursor = (
-            self.content_height + self.extray - (self.style.border * 2) - 1, // do not consider the borderwidth in the lastcursor of this window
-            self.content_width + self.extrax - (self.style.border * 2) - 1,
+            self.content_height + self.extray - 1, // do not consider the borderwidth in the lastcursor of this window
+            self.content_width + self.extrax - 1,
         );
         // do not consider the padding along the direction
 
@@ -761,18 +758,20 @@ impl IView {
                             return;
                         }
 
-                        let prevtopleft = topleft.clone();
+                        let mut prevtopleft = topleft.clone();
 
                         let margin = {
                             let child = child_lk.lock().unwrap();
                             match direction {
                                 FLEXDIRECTION::VERTICAL => {
-                                    topleft.0 += child.height + self.margintop;
+                                    topleft.0 += child.height;
                                 }
                                 FLEXDIRECTION::HORIZONTAL => {
-                                    topleft.1 += child.width + self.marginleft;
+                                    topleft.1 += child.width;
                                 }
                             }
+                            topleft.0 += child.margintop;
+                            topleft.1 += child.marginleft;
                             (
                                 child.margintop,
                                 child.marginbottom,
@@ -796,12 +795,15 @@ impl IView {
                             return;
                         }
 
+                        prevtopleft.0 += margin.0;
+                        prevtopleft.1 += margin.2;
+
                         // either within the limits or is not static
                         let (mut render_box, child_win) =
                             child_lk.clone().lock().unwrap().__render__();
 
                         // update the render box
-                        let mut curr_box = self.corrected_render_box(
+                        let curr_box = self.corrected_render_box(
                             &mut render_box,
                             &prevtopleft,
                             &last_cursor,
@@ -809,12 +811,12 @@ impl IView {
                         );
 
                         // LOGLn!(
-                        //     "{:p} {:?} {:?} {:?} {}",
+                        //     "{:p} {:?} {:?} {:?} {:?}",
                         //     self,
                         //     render_box,
                         //     curr_box,
                         //     prevtopleft,
-                        //     self.marginleft
+                        //     margin
                         // );
 
                         // need to consider the flex direction
@@ -824,23 +826,27 @@ impl IView {
                             *win,
                             render_box.toplefty,
                             render_box.topleftx,
-                            curr_box.toplefty + self.style.border,
-                            curr_box.topleftx + self.style.border,
-                            curr_box.bottomrighty + self.style.border,
-                            curr_box.bottomrightx + self.style.border,
+                            curr_box.toplefty ,
+                            curr_box.topleftx ,
+                            curr_box.bottomrighty ,
+                            curr_box.bottomrightx ,
                             0,
                         );
 
-                        curr_box.add_to_all(self.style.border);
+                        // curr_box.add_to_all(self.style.border);
 
                         child_lk.lock().unwrap().destroy_basic_struct();
 
                         match direction {
                             FLEXDIRECTION::VERTICAL => {
                                 topleft.0 += margin.1;
+                                topleft.1 -= margin.2; // since this was added but we are not going in this direction
+                                // hence remove the left margin
                             }
                             FLEXDIRECTION::HORIZONTAL => {
                                 topleft.1 += margin.3;
+                                topleft.0 -= margin.0; // since this was added but we are not going in this direction
+                                // hence remove the top margin
                             }
                         }
 
@@ -864,7 +870,7 @@ impl IView {
                         // update the render box
                         let curr_box = self.corrected_render_box(
                             &mut render_box,
-                            &(self.scrolly, self.scrollx),
+                            &(self.scrolly + margin.4, self.scrollx + margin.5), // current scroll and the top and left, scroll will be substracted out inside function
                             &last_cursor,
                             &margin,
                         );
@@ -934,8 +940,8 @@ impl IView {
                         self.scrollx,
                         topleft.0,
                         topleft.1,
-                        last_cursor.0 - self.paddingbottom + self.style.border,
-                        last_cursor.1 - self.paddingright + self.style.border,
+                        last_cursor.0 - self.paddingbottom ,
+                        last_cursor.1 - self.paddingright ,
                         0,
                     );
 
@@ -1040,8 +1046,8 @@ impl IView {
     fn transfer_event(&mut self, event: &mut EVENT) {
         let mut topleft = (self.paddingtop, self.paddingleft); // virtual screen
         let mut last_cursor = (
-            self.content_height + self.extray - (self.style.border * 2) - 1, // do not consider the borderwidth in the lastcursor of this window
-            self.content_width + self.extrax - (self.style.border * 2) - 1,
+            self.content_height + self.extray - 1, // do not consider the borderwidth in the lastcursor of this window
+            self.content_width + self.extrax - 1,
         );
         // do not consider the padding along the direction
 
@@ -1071,18 +1077,20 @@ impl IView {
                             return;
                         }
 
-                        let prevtopleft = topleft.clone();
+                        let mut prevtopleft = topleft.clone();
 
                         let (margin, mut render_box) = {
                             let child = child_lk.lock().unwrap();
                             match direction {
                                 FLEXDIRECTION::VERTICAL => {
-                                    topleft.0 += child.height + self.margintop;
+                                    topleft.0 += child.height;
                                 }
                                 FLEXDIRECTION::HORIZONTAL => {
-                                    topleft.1 += child.width + self.marginleft;
+                                    topleft.1 += child.width;
                                 }
                             }
+                            topleft.0 += child.margintop;
+                            topleft.1 += child.marginleft;
                             let render_box = RenderBox {
                                 topleftx: 0,
                                 toplefty: 0,
@@ -1108,22 +1116,25 @@ impl IView {
                             return;
                         }
 
+                        prevtopleft.0 += margin.0;
+                        prevtopleft.1 += margin.2;
+
                         // update the render box
-                        let mut curr_box = self.corrected_render_box(
+                        let curr_box = self.corrected_render_box(
                             &mut render_box,
                             &prevtopleft,
                             &last_cursor,
                             &margin,
                         );
 
-                        curr_box.add_to_all(self.style.border);
+                        // curr_box.add_to_all(self.style.border);
 
                         // LOGLn!("{:?} {}", curr_box, self.style.border);
                         
                         // now check whether this box fells under the event constraints
                         if curr_box.is_inside((event.clienty, event.clientx)) {
-                            event.clientx -= prevtopleft.0 - self.scrolly + self.style.border;
-                            event.clienty -= prevtopleft.1 - self.scrolly + self.style.border;
+                            event.clientx -= prevtopleft.0 - self.scrolly ;
+                            event.clienty -= prevtopleft.1 - self.scrolly ;
                             let mut child = child_lk.lock().unwrap();
                             if matches!(child.style.scroll, OVERFLOWBEHAVIOUR::SCROLL) {
                                 DOCUMENT.lock().unwrap().set_active(child_lk.clone());
@@ -1133,13 +1144,17 @@ impl IView {
                             event.clientx = actualx;
                             event.clienty = actualy;
                         }
-                        
+
                         match direction {
                             FLEXDIRECTION::VERTICAL => {
                                 topleft.0 += margin.1;
+                                topleft.1 -= margin.2; // since this was added but we are not going in this direction
+                                // hence remove the left margin
                             }
                             FLEXDIRECTION::HORIZONTAL => {
                                 topleft.1 += margin.3;
+                                topleft.0 -= margin.0; // since this was added but we are not going in this direction
+                                // hence remove the top margin
                             }
                         }
                     } else {
@@ -1169,7 +1184,7 @@ impl IView {
                         // update the render box
                         let curr_box = self.corrected_render_box(
                             &mut render_box,
-                            &(self.scrolly, self.scrollx),
+                            &(self.scrolly + margin.4, self.scrollx + margin.5), // current scroll and the top and left, scroll will be substracted out inside function
                             &last_cursor,
                             &margin,
                         );

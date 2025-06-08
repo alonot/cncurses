@@ -874,7 +874,7 @@ pub fn run(app: impl Component) {
 
         // if changes, render the changed portion
         if changed {
-            // debug_tree(root.clone(), 0);
+            // _debug_tree(root.clone(), 0);
             let _ = tree_refresh(root.clone());
             // {
             //     let Some(fiber) = DOCUMENT.lock().unwrap().curr_fiber.clone() else {
