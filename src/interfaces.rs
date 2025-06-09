@@ -251,7 +251,7 @@ impl Document {
      * in box : (6 * 6 * 6)
      *
      */
-    pub fn get_color(&mut self, red: i16, green: i16, blue: i16) -> i16 {
+    pub fn get_color(red: i16, green: i16, blue: i16) -> i16 {
         let (r, g, b) = (red.min(255) / 51, green.min(255) / 51, blue.min(255) / 51);
         return 16 + (36 * r + 6 * g + b);
     }

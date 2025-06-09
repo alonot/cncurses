@@ -133,6 +133,22 @@ The main use and aim of this feature is in future when library enable support fo
 - On further interactions with keyboard UP, DOWN, RIGHT,LEFT, this currect `active` child's scroll behaviour is triggered.
 - When an elements comes into focus through tab, and it is scrollable then current `active` is set to that same element.
 
+#### Positioning and Flex
+
+- By default position is set to `static`. In this mode any child are place next to the previous child according to the direction. 
+- When `relative` positon, the child is placed relative to the parent for (0,0) of the parent.
+- If `flex-wrap` is turned on the children will automatically wrap around to next line.
+- If `flex-grow` is turned on for _last child_ then the remaining height/width(depending on flex-direction) is assigned to the child. `Note` : if `flex-wrap` for the parent is **on** then this property have no effect.
+
+#### Debugging in case of invalid css properties or circular dependency
+
+Currently the Debugging process is not so user-friendly. The program will output two trees, One `IView` tree and another `Fiber` tree. 
+Proposed way for now: 
+1. Copy both trees to some file in your IDE, along with the bottom error message.
+2. The error message contains the address of `IView` where the error originated. 
+3. Your Component structure corresponds to the `Fiber` tree, Find the Fiber element which corresponds to that errorred `IView` and go through the tree to get your component which is causing the error.
+
+
 
 ## Fote Note
 

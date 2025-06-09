@@ -28,6 +28,8 @@ pub struct CSSStyle<'a> {
     pub width: &'a str,
     pub overflow: &'a str,
     pub z_index: i32,
+    /** If multiple element has this value set then only the last element actually uses this property */
+    pub flex_grow: bool,
 }
 
 impl<'a> Default for CSSStyle<'a> {
@@ -51,6 +53,7 @@ impl<'a> Default for CSSStyle<'a> {
             width: Default::default(),
             overflow: Default::default(),
             z_index: 0,
+            flex_grow: false,
         }
     }
 }
@@ -151,6 +154,7 @@ impl<'a> CSSStyle<'a> {
         style.border_color = self.border_color;
         style.color = self.color;
         style.flex = self.flex;
+        style.flex_grow = self.flex_grow;
         style.taborder = self.taborder;
         if !self.flex_direction.is_empty() {
             style.flex_direction = parse_flex_direction(self.flex_direction);
@@ -225,6 +229,7 @@ pub(crate) struct Style {
 
     pub(crate) flex: u32,
     pub(crate) flex_wrap: bool,
+    pub(crate) flex_grow: bool,
     pub(crate) border: i32,
     pub(crate) border_color: i16,
     pub(crate) color: i16,
@@ -267,6 +272,7 @@ impl Style {
             border: 0,
             border_color: -1,
             flex_wrap: false,
+            flex_grow: false,
             color: -1,
             background_color: -2,
             flex_direction: FLEXDIRECTION::default(),
@@ -310,6 +316,7 @@ impl Style {
             STYLE::BORDERCOLOR(bg) => self.border_color = bg,
             STYLE::ZINDEX(z) => self.z_index = z,
             STYLE::FLEXWRAP(f) => self.flex_wrap = f,
+            STYLE::FLEXGROW(f) => self.flex_grow = f,
             STYLE::OVERFLOW(overflow_behaviour) => self.overflow = overflow_behaviour,
         }
     }
@@ -435,6 +442,7 @@ pub enum STYLE {
     BOXSIZING(BOXSIZING),
     POSITION(POSITION),
     FLEXWRAP(bool),
+    FLEXGROW(bool),
     /** 0 means unset. Actual Height and width dimensions with INT gets priority over flex. if they are set with PERCEN then flex gets priority. */
     FLEX(u32),
     /**Default Vertical */

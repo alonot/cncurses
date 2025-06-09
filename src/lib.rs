@@ -21,7 +21,7 @@ use nmodels::iview::IView;
 use std::{
     any::TypeId,
     collections::HashMap,
-    fmt::Debug,
+    fmt::{Debug, Error},
     i32,
     mem::take,
     panic,
@@ -109,7 +109,7 @@ fn initialize() {
 }
 
 fn _debug_iview(iview: &std::sync::MutexGuard<'_, IView>) {
-    LOGLn!(
+    println!(
         "IView_{}({}, ::{:p} {:?} {})",
         iview.id,
         iview.style.render,
@@ -122,9 +122,9 @@ fn _debug_iview(iview: &std::sync::MutexGuard<'_, IView>) {
 fn _debug_tree(node: Arc<Mutex<IView>>, tabs: i32) {
     let iview: std::sync::MutexGuard<'_, IView> = node.lock().unwrap();
     for _ in 0..tabs {
-        LOG!("\t");
+        print!("\t");
     }
-    LOG!("|-");
+    print!("|-");
     match &iview.content {
         interfaces::IViewContent::CHIDREN(items) => {
             _debug_iview(&iview);
@@ -133,7 +133,7 @@ fn _debug_tree(node: Arc<Mutex<IView>>, tabs: i32) {
             });
         }
         interfaces::IViewContent::TEXT(txt) => {
-            LOGLn!(
+            println!(
                 "IView_{}({}, {}, ::{:p})",
                 iview.id,
                 iview.style.render,
@@ -152,7 +152,7 @@ fn _debug_fiber(node: Arc<Mutex<Fiber>>) {
         inode_p
     };
     let fiber = node.lock().unwrap();
-    LOGLn!(
+    println!(
         "Fiber({}, {},{:?}, ::{:p} {:?}):",
         fiber.key,
         fiber.changed,
@@ -164,9 +164,9 @@ fn _debug_fiber(node: Arc<Mutex<Fiber>>) {
 
 fn _debug_fiber_tree(node: Arc<Mutex<Fiber>>, tabs: i32) {
     for _ in 0..tabs {
-        LOG!("\t");
+        print!("\t");
     }
-    LOG!("|-");
+    print!("|-");
     _debug_fiber(node.clone());
 
     let fiber = node.lock().unwrap();
@@ -192,7 +192,7 @@ fn create_tree(
     node: Arc<Mutex<dyn Component>>,
     parent: Arc<Mutex<IView>>,
     changed: bool,
-) -> Arc<Mutex<Fiber>> {
+) -> Result<Arc<Mutex<Fiber>>, String> {
     // we'll get the current fiber set
 
     // LOG!(format!("{:?}", as_any(node.clone()).type_id()));
@@ -207,13 +207,13 @@ fn create_tree(
  *
  * **HAS** SIDE-EFFECTS
  */
-fn create_render_tree(node: Arc<Mutex<dyn Component>>) -> Arc<Mutex<IView>> {
+fn create_render_tree(node: Arc<Mutex<dyn Component>>) -> Result<Arc<Mutex<IView>>,String> {
     let parent = IView::new()
         .set_style(STYLE::HIEGHT(DIMEN::PERCENT(100.)))
         .set_style(STYLE::WIDTH(DIMEN::PERCENT(100.)))
         .build();
 
-    let fiber = create_tree(node, parent.clone(), true);
+    let fiber = create_tree(node, parent.clone(), true)?;
 
     let Some(iview) = fiber.lock().unwrap().iview.clone() else {
         panic!("CREATERENDERTREEE: no iview in given Componenet")
@@ -223,7 +223,7 @@ fn create_render_tree(node: Arc<Mutex<dyn Component>>) -> Arc<Mutex<IView>> {
 
     let _ = DOCUMENT.lock().unwrap().re_assign_fiber(Some(fiber));
 
-    parent
+    Ok(parent)
 }
 
 /**
@@ -239,7 +239,7 @@ fn call_n_create_with_fiber(
     fiber_lk: Arc<Mutex<Fiber>>,
     parent: Arc<Mutex<IView>>,
     changed: bool,
-) -> Arc<Mutex<Fiber>> {
+) -> Result<Arc<Mutex<Fiber>>,String> {
     let iview = if let Some(base_lk) = convert_to_icomponent(&node) {
         let mut base = base_lk.lock().unwrap();
         // we need to assign parent to this base
@@ -255,7 +255,7 @@ fn call_n_create_with_fiber(
             .children
             .iter()
             .map(|child| {
-                let fiber = create_tree(child.clone(), base_lk.clone(), changed);
+                let fiber = create_tree(child.clone(), base_lk.clone(), changed)?;
 
                 let Some(iview) = fiber.lock().unwrap().iview.clone() else {
                     panic!("CREATETREEE: no iview in given Componenet")
@@ -265,9 +265,9 @@ fn call_n_create_with_fiber(
                 let mut curr_fiber = fiber_lk.lock().unwrap();
                 curr_fiber.children.push(fiber);
 
-                iview
+                Ok(iview)
             })
-            .collect();
+            .collect::<Result<Vec<Arc<Mutex<IView>>>,String>>()?;
 
         let content = &mut base.content;
 
@@ -294,7 +294,7 @@ fn call_n_create_with_fiber(
         // restore actual fiber back
         DOCUMENT.lock().unwrap().assign_fiber(prev_fiber);
 
-        let child_fiber = create_tree(new_node, parent, changed);
+        let child_fiber = create_tree(new_node, parent, changed)?;
 
         let Some(iview) = child_fiber.lock().unwrap().iview.clone() else {
             panic!("CREATETREEE: no iview in given Componenet")
@@ -312,7 +312,7 @@ fn call_n_create_with_fiber(
     let mut fiber = cfiber_lk.lock().unwrap();
     fiber.add_iview(iview);
 
-    fiber_lk
+    Ok(fiber_lk)
 }
 
 fn is_not_same(
@@ -375,7 +375,7 @@ fn update_child(fiber_lk: Arc<Mutex<Fiber>>) {
  * This time it checks if fiber needs to be changed or not using key and type of Component
  * If yes the creates a new Fiber else returns the same
  */
-fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> bool {
+fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> Result<bool,String> {
     let mut changed;
 
     let component;
@@ -413,7 +413,7 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> b
                     .map(|new_node| {
                         // we have to re render all the children or change their states if different
                         let is_not_same_child = {
-                            if i <= curr_fiber_children.len() {
+                            if i < curr_fiber_children.len() {
                                 let child_lk = curr_fiber_children[i].clone();
                                 is_not_same(new_node, &child_lk)
                             } else {
@@ -424,7 +424,7 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> b
                         let iview = if is_not_same_child {
                             // since parent will unmount hence children would also unmount
                             let fiber: Arc<Mutex<Fiber>> =
-                                create_tree(new_node.clone(), base_lk.clone(), true);
+                                create_tree(new_node.clone(), base_lk.clone(), true)?;
 
                             let Some(iview) = fiber.lock().unwrap().iview.clone() else {
                                 panic!("CREATETREEE: no iview in given Componenet")
@@ -456,9 +456,9 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> b
                         };
                         i += 1;
 
-                        iview
+                        Ok(iview)
                     })
-                    .collect();
+                    .collect::<Result<Vec<Arc<Mutex<IView>>>,String>>()?;
 
                 // LOGLn!(
                 //     "{:?} {} {:p}",
@@ -513,7 +513,7 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> b
 
             if is_not_same_child {
                 // create new tree
-                let child_fiber_lk = create_tree(new_node, parent, false); // somewhere inside the IView would get filled by its child_lk
+                let child_fiber_lk = create_tree(new_node, parent, false)?; // somewhere inside the IView would get filled by its child_lk
 
                 newly_created = true;
                 // // add this new fiber as child_lk
@@ -604,9 +604,10 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> b
                 parent
             };
 
-            fiber.children.iter().for_each(|child| {
-                changed |= check_for_change(child.clone(), child_parent.clone());
-            });
+            fiber.children.iter().try_for_each(|child| {
+                changed |= check_for_change(child.clone(), child_parent.clone())?;
+                Ok::<(), String>(())
+            })?;
         }
         // if changed then we need to update the parent list
         if changed {
@@ -614,7 +615,7 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> b
         }
     }
 
-    changed
+    Ok(changed)
 }
 
 /**
@@ -622,7 +623,7 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> b
  * Assumes the root fiber is in global CURR_FIBER.
  * HAS SIDE_EFFECTS
  */
-fn diff_n_update(root: Arc<Mutex<IView>>) -> bool {
+fn diff_n_update(root: Arc<Mutex<IView>>) -> Result<bool, String> {
     let fiber_lk = {
         let document = DOCUMENT.lock().unwrap();
         let Some(currfib_lk) = document.curr_fiber.clone() else {
@@ -631,7 +632,7 @@ fn diff_n_update(root: Arc<Mutex<IView>>) -> bool {
         currfib_lk
     };
 
-    let changed = check_for_change(fiber_lk.clone(), root.clone());
+    let changed = check_for_change(fiber_lk.clone(), root.clone())?;
     if changed {
         // update the root
         let Some(iview) = fiber_lk.lock().unwrap().iview.clone() else {
@@ -641,13 +642,13 @@ fn diff_n_update(root: Arc<Mutex<IView>>) -> bool {
         root.lock().unwrap().content = IViewContent::CHIDREN(vec![iview]);
     }
 
-    changed
+    Ok(changed)
 }
 
 /**
  * Init the IView tree's structure
  */
-fn tree_refresh(root: Arc<Mutex<IView>>) -> (i32, i32, bool) {
+fn tree_refresh(root: Arc<Mutex<IView>>) -> Result<(i32, i32, bool), String> {
     let x = &mut 0;
     let y = &mut 0;
     refresh();
@@ -657,7 +658,7 @@ fn tree_refresh(root: Arc<Mutex<IView>>) -> (i32, i32, bool) {
         document.clear_color_pairs();
         // document._clear_tab_order();
     };
-    let res = root.lock().unwrap().__init__(*y, *x);
+    let res = root.lock().unwrap().__init__(*y, *x)?;
     if res.2 {
         {
             let mut document = DOCUMENT.lock().unwrap();
@@ -668,7 +669,7 @@ fn tree_refresh(root: Arc<Mutex<IView>>) -> (i32, i32, bool) {
             document.create_tab_order();
         }
 
-        let _ = root.lock().unwrap().__render__();
+        let _ = root.lock().unwrap().__render__()?;
         let Some(basic_struct) = &root.lock().unwrap().basic_struct else {
             panic!("NO window at root");
         };
@@ -679,7 +680,7 @@ fn tree_refresh(root: Arc<Mutex<IView>>) -> (i32, i32, bool) {
         refresh();
     }
     DOCUMENT.lock().unwrap().changed = false;
-    res
+    Ok(res)
 }
 
 /**
@@ -702,7 +703,7 @@ fn handle_event(iview_lk: Arc<Mutex<IView>>, event: &mut EVENT) {
 pub(crate) fn handle_focus_change(
     prev_iview: Option<Arc<Mutex<IView>>>,
     new_iview: Option<Arc<Mutex<IView>>>,
-) {
+) -> Result<(), String> {
     if {
         if let Some(iview_lk) = prev_iview.clone() {
             if let Some(iview_lk_new) = new_iview.clone() {
@@ -714,7 +715,7 @@ pub(crate) fn handle_focus_change(
             false
         }
     } {
-        return;
+        return Ok(());
     }
     if let Some(iview_lk) = prev_iview {
         let mut iview = iview_lk.lock().unwrap();
@@ -733,12 +734,13 @@ pub(crate) fn handle_focus_change(
             DOCUMENT.lock().unwrap().set_active(iview_lk.clone());
         }
     }
+    Ok(())
 }
 
 /**
  * returns whether to exit the program
  */
-fn handle_keyboard_event(ch: i32) -> bool {
+fn handle_keyboard_event(ch: i32) -> Result<bool, String> {
     let focused_iview = {
         let document = DOCUMENT.lock().unwrap();
         let iview = document.focused_element();
@@ -771,23 +773,23 @@ fn handle_keyboard_event(ch: i32) -> bool {
                 }
             }
             val if val == 'q' as i32 => {
-                return true;
+                return Ok(true);
             }
             _ => {}
         }
     }
-    false
+    Ok(false)
 }
 
 /**
  * returns true if to exit the app
  */
-fn handle_events(root: Arc<Mutex<IView>>) -> bool {
+fn handle_events(root: Arc<Mutex<IView>>) -> Result<bool, String> {
     let ch = getch();
     match ch {
         KEY_RESIZE => {
             initialize();
-            tree_refresh(root.clone());
+            tree_refresh(root.clone())?;
         }
         KEY_MOUSE => {
             let mut mevent = MEVENT {
@@ -815,12 +817,43 @@ fn handle_events(root: Arc<Mutex<IView>>) -> bool {
         }
         val => {
             // call the keyboard handler
-            if handle_keyboard_event(val) {
-                return true;
+            if handle_keyboard_event(val)? {
+                return Ok(true);
             }
         }
     }
-    return false;
+    return Ok(false);
+}
+
+
+fn run_app(root: Arc<Mutex<IView>>) -> Result<(), String> {
+
+    loop {
+        // if change, get the tree from the app.
+        // diff the tree to get the changed components
+        let mut changed = diff_n_update(root.clone())?;
+
+        changed |= DOCUMENT.lock().unwrap().changed;
+
+        // if changes, render the changed portion
+        if changed {
+            // _debug_tree( root.clone(), 0);
+            let _ = tree_refresh(root.clone())?;
+            // {
+            //     let Some(fiber) = DOCUMENT.lock().unwrap().curr_fiber.clone() else {
+            //         panic!("No fiber")
+            //     };
+
+            //     _debug_fiber_tree(fiber.clone(), 0);
+            // }
+        }
+        // return Err("()".to_string());
+        // handle click and scroll
+        if handle_events(root.clone())? {
+            break;
+        }
+    }
+    Ok(())
 }
 
 pub(crate) static REMOVEINDEX: Mutex<Vec<i32>> = Mutex::new(vec![]);
@@ -906,40 +939,31 @@ pub fn use_state<T: Stateful + Debug>(init_val: T) -> (T, Arc<dyn Fn(T)>) {
 pub fn run(app: impl Component) {
     let _ = std::fs::write("debug.txt", "");
 
+    panic::set_hook(Box::new(move |info| {
+        endwin();
+        println!("PANIC: {}", info);
+    }));
+
     initialize();
 
     let node: Arc<Mutex<dyn Component>> = Arc::new(Mutex::new(app));
 
-    let root = create_render_tree(node);
-    // let rootc = root.clone();
-    panic::set_hook(Box::new(move |info| {
-        endwin();
-        println!("{}", info);
-    }));
+    let root = create_render_tree(node).expect("Failed to create the tree");
 
-    loop {
-        // if change, get the tree from the app.
-        // diff the tree to get the changed components
-        let mut changed = diff_n_update(root.clone());
+    match run_app(root.clone()) {
+        Ok(_) => {},
+        Err(e) => {
+            endwin();
+            _debug_tree(root, 0);
+            {
+                let Some(fiber) = DOCUMENT.lock().unwrap().curr_fiber.clone() else {
+                    panic!("No fiber")
+                };
 
-        changed |= DOCUMENT.lock().unwrap().changed;
-
-        // if changes, render the changed portion
-        if changed {
-            // _debug_tree( root.clone(), 0);
-            let _ = tree_refresh(root.clone());
-            // {
-            //     let Some(fiber) = DOCUMENT.lock().unwrap().curr_fiber.clone() else {
-            //         panic!("No fiber")
-            //     };
-
-            //     _debug_fiber_tree(fiber.clone(), 0);
-            // }
-        }
-        // handle click and scroll
-        if handle_events(root.clone()) {
-            break;
-        }
+                _debug_fiber_tree(fiber.clone(), 0);
+            }
+            println!("{e}");
+        },
     }
 
     endwin();
@@ -960,13 +984,7 @@ mod test {
     use ncurses::{COLOR_MAGENTA, COLOR_RED, endwin};
 
     use crate::{
-        DOCUMENT,
-        components::{text::Text, view::View},
-        initialize,
-        interfaces::{Component, ComponentBuilder},
-        run,
-        styles::{CSSStyle, DIMEN, FLEXDIRECTION, OVERFLOWBEHAVIOUR, STYLE},
-        use_state,
+        components::{text::Text, view::View}, initialize, interfaces::{Component, ComponentBuilder, Document}, run, styles::{CSSStyle, DIMEN, FLEXDIRECTION, OVERFLOWBEHAVIOUR, STYLE}, use_state, DOCUMENT
     };
 
     struct DemoApp1 {
@@ -991,7 +1009,7 @@ mod test {
 
             setp1("Namaste hai bhai Sare ne!".to_string());
 
-            let color = DOCUMENT.lock().unwrap().get_color(255, 60, 0);
+            let color = Document::get_color(255, 60, 0);
 
             if p1 == "Namaste hai bhai Sare ne!" {
                 View::new_style_vec(
@@ -1034,7 +1052,7 @@ mod test {
             let color = if p == 0 {
                 COLOR_MAGENTA
             } else {
-                DOCUMENT.lock().unwrap().get_color(255, 120, 0)
+                Document::get_color(255, 120, 0)
             };
             let p1 = setp.clone();
 
