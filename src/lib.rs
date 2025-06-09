@@ -19,13 +19,19 @@ use ncurses::{
 };
 use nmodels::iview::IView;
 use std::{
-    any::TypeId, collections::HashMap, fmt::Debug, i32, mem::take, panic, sync::{Arc, LazyLock, Mutex}
+    any::TypeId,
+    collections::HashMap,
+    fmt::Debug,
+    i32,
+    mem::take,
+    panic,
+    sync::{Arc, LazyLock, Mutex},
 };
 
-use crate::{interfaces::Document, nmodels::iview, styles::Style};
 use crate::interfaces::{BASICSTRUCT, EVENT};
 use crate::styles::DIMEN;
 use crate::styles::STYLE;
+use crate::{interfaces::Document, nmodels::iview, styles::Style};
 
 pub mod components;
 pub mod interfaces;
@@ -102,7 +108,7 @@ fn initialize() {
     refresh();
 }
 
-fn _debug_iview(iview:&std::sync::MutexGuard<'_, IView>) {
+fn _debug_iview(iview: &std::sync::MutexGuard<'_, IView>) {
     LOGLn!(
         "IView_{}({}, ::{:p} {:?} {})",
         iview.id,
@@ -152,8 +158,7 @@ fn _debug_fiber(node: Arc<Mutex<Fiber>>) {
         fiber.changed,
         get_typeid(fiber.component.clone()),
         &*inode.lock().unwrap(),
-        Arc::as_ptr(&node)
-        // fiber.state.len()
+        Arc::as_ptr(&node) // fiber.state.len()
     );
 }
 
@@ -546,24 +551,41 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> b
         let mut fiber = fiber_lk.lock().unwrap();
 
         if let Some(prev_iview) = &fiber.iview {
-            let mut document = DOCUMENT.lock().unwrap();
-            if document.is_active(prev_iview) {
-                document.set_active(iview.clone());
-            }
-            if let Some(focus) = document.focused_element() {
-                if Arc::as_ptr(&focus).eq(&Arc::as_ptr(&prev_iview)) {
-                    // if focused then update 
-                    document.update_focused_iview(iview.clone(), iview.lock().unwrap().id);
+            let id = {
+                let mut iv = iview.lock().unwrap();
+                iv.id
+            };
+            if !Arc::as_ptr(prev_iview).eq(&Arc::as_ptr(&iview)) {
+                let mut document = DOCUMENT.lock().unwrap();
+                if document.is_active(prev_iview) {
+                    document.set_active(iview.clone());
+                }
+                let updated = if let Some(focus) = document.focused_element() {
+                    // LOGLn!("{} {} {}", prev_id, id, focus.lock().unwrap().id);
+                    if Arc::as_ptr(&focus).eq(&Arc::as_ptr(prev_iview)) {
+                        // if focused then update
+                        document.update_focused_iview(iview.clone(), iview.lock().unwrap().id);
+                        false
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                if prev_iview.lock().unwrap().style.taborder >= 0 && !updated {
+                    REMOVEINDEX
+                    .lock()
+                    .unwrap()
+                    .push(prev_iview.lock().unwrap().id);
                 }
 
-            }
-            REMOVEINDEX.lock().unwrap().push(prev_iview.lock().unwrap().id);
-            
-            if !newly_created {
-                let mut iv = iview.lock().unwrap();
-                iv.fill_box_infos_from_other(&prev_iview.lock().unwrap());
-            }
 
+                if !newly_created {
+                    let mut iv = iview.lock().unwrap();
+                    iv.fill_box_infos_from_other(&prev_iview.lock().unwrap());
+                }
+            }
         }
 
         // // add this iview to this fiber
@@ -730,9 +752,8 @@ fn handle_keyboard_event(ch: i32) -> bool {
     const TAB: i32 = '\t' as i32;
 
     if event.default {
-        
         match ch {
-            KEY_BTAB | KEY_CTAB | KEY_STAB | KEY_CATAB | TAB => {
+            TAB => {
                 let (prev_iview, new_iview) = {
                     let mut document = DOCUMENT.lock().unwrap();
                     document.advance_tab()
@@ -843,8 +864,10 @@ pub fn use_state<T: Stateful + Debug>(init_val: T) -> (T, Arc<dyn Fn(T)>) {
     // add new entry if required
     if currfiber.head == currfiber.state.len() {
         currfiber.state.push(Box::new(clone(&init_val)));
-        currfiber.head += 1;
     }
+    currfiber.head += 1;
+
+    // LOGLn!("NEW {} {:?} {:?}", curr_hook, init_val, Arc::as_ptr(&currfiber_lk));
 
     let box_value = &currfiber.state[curr_hook as usize];
 
@@ -898,14 +921,9 @@ pub fn run(app: impl Component) {
         // if change, get the tree from the app.
         // diff the tree to get the changed components
         let mut changed = diff_n_update(root.clone());
-        // handle click and scroll
-        if handle_events(root.clone()) {
-            break;
-        }
 
         changed |= DOCUMENT.lock().unwrap().changed;
 
-        
         // if changes, render the changed portion
         if changed {
             // _debug_tree( root.clone(), 0);
@@ -917,6 +935,10 @@ pub fn run(app: impl Component) {
 
             //     _debug_fiber_tree(fiber.clone(), 0);
             // }
+        }
+        // handle click and scroll
+        if handle_events(root.clone()) {
+            break;
         }
     }
 

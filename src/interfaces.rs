@@ -205,7 +205,7 @@ impl Document {
 
     pub(crate) fn is_active(&mut self, iview: &Arc<Mutex<IView>>) -> bool {
         if let Some(act) = &self.curr_active {
-            return Arc::as_ptr(act).eq(&Arc::as_ptr(&iview));
+            return Arc::as_ptr(act).eq(&Arc::as_ptr(iview));
         }
         false
     }
@@ -318,8 +318,19 @@ impl Document {
 
     /**creates the tab order using the inserted elements so far */
     pub(crate) fn create_tab_order(&mut self) {
+        let id = {
+            if self.tabindex >= self.taborder.len() {
+                -1
+            } else {
+                self.taborder[self.tabindex].id
+            }
+        };
         self.taborder
             .sort_by_key(|c| -c.iview.lock().unwrap().style.taborder);
+        let prev_next_id = self.next_tab_id;
+        self.next_tab_id = id;
+        self.focus();
+        self.next_tab_id = prev_next_id;
     }
 
     pub(crate) fn remove_id(&mut self, id: &i32) {
@@ -331,7 +342,7 @@ impl Document {
             match &iview.lock().unwrap().content {
                 IViewContent::CHIDREN(items) => {
                     items.iter().for_each(|child| {
-                        to_remove.push({ child.lock().unwrap().id });
+                        to_remove.push( child.lock().unwrap().id );
                     });
                 }
                 IViewContent::TEXT(_) => {
@@ -344,7 +355,7 @@ impl Document {
             });
 
             ///////
-
+            // LOGLn!("REMOVING {}",id);
             self.taborder.remove(idx);
 
             if self.tabindex == idx {
@@ -372,8 +383,8 @@ impl Document {
     /**Locks the iview */
     pub(crate) fn advance_tab(&mut self) -> (Option<Arc<Mutex<IView>>>, Option<Arc<Mutex<IView>>>) {
         let prev_iview_lk = self.focused_element();
-        // LOGLn!("START: {} {} {}", self.tabindex, self.taborder.len(), self.next_tab_id);
         if self.next_tab_id != -1 {
+            // LOGLn!("START: {} {} {}", self.tabindex, self.taborder.len(), self.next_tab_id);
             self.focus()
         } else {
             self.tabindex += 1;
@@ -387,7 +398,6 @@ impl Document {
     }
 
     /** Change the focus to given current next_tab_id if available
-     * else set index to list end
      */
     pub(crate) fn focus(&mut self) -> (Option<Arc<Mutex<IView>>>, Option<Arc<Mutex<IView>>>) {
         let prev_iview_lk = self.focused_element();
@@ -397,8 +407,6 @@ impl Document {
             .position(|ielement| ielement.id == self.next_tab_id)
         {
             self.tabindex = idx;
-        } else {
-            self.tabindex = self.taborder.len();
         }
         self.next_tab_id = -1;
         (prev_iview_lk, self.focused_element())

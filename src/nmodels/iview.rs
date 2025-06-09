@@ -238,12 +238,12 @@ impl IView {
 
         let mut parent_height = self.content_height;
         let mut parent_width = self.content_width;
-        if parent_height >= 0 && matches!(self.style.boxsizing, BOXSIZING::CONTENTBOX) {
-            parent_height += self.style.border * 2;
-        }
-        if parent_width >= 0 && matches!(self.style.boxsizing, BOXSIZING::CONTENTBOX) {
-            parent_width += self.style.border * 2;
-        }
+        // if parent_height >= 0 {
+        //     parent_height += self.style.border * 2;
+        // }
+        // if parent_width >= 0 {
+        //     parent_width += self.style.border * 2;
+        // }
 
         let direction = &self.style.flex_direction;
 
@@ -284,42 +284,48 @@ impl IView {
                         if self.flex_wrap_on {
                             let mut nexth = prev.0;
                             let mut nextw = prev.1;
+                            let child_full_height = childh + child.marginbottom + child.margintop;
+                            let child_full_width = childw + child.marginleft + child.marginright;
                             match direction {
                                 FLEXDIRECTION::VERTICAL => {
                                     let _nexth =
-                                        prev.0 + childh + self.marginbottom + self.margintop;
+                                        prev.0 + child_full_height;
                                     if _nexth < parent_height {
                                         nexth = _nexth;
+                                        cheight_wrap = max(cheight_wrap,nexth);
                                     } else {
+                                        cheight_wrap = max(cheight_wrap,max(prev.0, child_full_height));
                                         nexth = 0;
                                         cwidth_wrap += nextw;
                                     }
-                                    nextw = max(nextw, childw + self.marginleft + self.marginright);
+                                    nextw = max(nextw, childw + child.marginleft + child.marginright);
                                 }
                                 FLEXDIRECTION::HORIZONTAL => {
                                     let _nextw =
-                                        prev.1 + childw + self.marginleft + self.marginright;
+                                        prev.1 + childw + child.marginleft + child.marginright;
                                     if _nextw < parent_width {
                                         nextw = _nextw;
+                                        cwidth_wrap = max(cwidth_wrap , nextw);
                                     } else {
+                                        cwidth_wrap = max(cwidth_wrap , max(prev.1, child_full_width));
                                         nextw = 0;
                                         cheight_wrap += nexth;
                                     }
-                                    nexth = max(nexth, childh + self.marginbottom + self.margintop);
+                                    nexth = max(nexth, childh + child.marginbottom + child.margintop);
                                 }
                             }
-                            // LOGLn!("FLEX : {} {} {}",cheight_wrap, nexth, nextw);
+                            // LOGLn!("FLEX : {} {} {} {} {}",cheight_wrap, nexth, nextw, childh, childw);
                             (nexth, nextw, prev.2 | changed)
                         } else {
                             match direction {
                                 FLEXDIRECTION::VERTICAL => (
-                                    prev.0 + childh + self.marginbottom + self.margintop,
-                                    max(prev.1, childw + self.marginleft + self.marginright),
+                                    prev.0 + childh + child.marginbottom + child.margintop,
+                                    max(prev.1, childw + child.marginleft + child.marginright),
                                     prev.2 | changed,
                                 ),
                                 FLEXDIRECTION::HORIZONTAL => (
-                                    max(prev.0, childh + self.marginbottom + self.margintop),
-                                    prev.1 + childw + self.marginleft + self.marginright,
+                                    max(prev.0, childh + child.marginbottom + child.margintop),
+                                    prev.1 + childw + child.marginleft + child.marginright,
                                     prev.2 | changed,
                                 ),
                             }
@@ -330,8 +336,10 @@ impl IView {
                     match direction {
                         FLEXDIRECTION::VERTICAL => {
                             cwidth = cwidth_wrap + cwidth;
+                            cheight = cheight_wrap;
                         }
                         FLEXDIRECTION::HORIZONTAL => {
+                            cwidth = cwidth_wrap;
                             cheight = cheight_wrap + cheight; // extra increase to count for last row
                         }
                     }
@@ -348,6 +356,9 @@ impl IView {
                         self.content_width = cwidth;
                     }
                 }
+                // if self.content_height == 3 && self.content_width == 43 {
+                // }
+                // LOGLn!("L: {:p} {} {} {} {} {}",self, self.content_height, self.content_width, cheight, cwidth, self.flex_wrap_on);
             }
             IViewContent::TEXT(txt) => {
                 if changed {
@@ -365,7 +376,7 @@ impl IView {
                     if self.content_height == FIT_CONTENT {
                         self.content_height = cheight;
                     }
-                    // LOGLn!("L: {:p} {} {} {} {} ",self, self.content_height, self.content_width, cheight, cwidth);
+                    // LOGLn!("L: {:p} {} {} {} {} {} ",self, txt, self.content_height, self.content_width, cheight, cwidth);
                 }
             }
         };
@@ -382,9 +393,6 @@ impl IView {
                 self.paddingleft = (self.content_width as f32 * percent).floor() as i32;
             }
             DIMEN::INT(w) => {
-                if w < 0 {
-                    panic!("Invalid Padding Left : {}", w)
-                }
                 self.paddingleft = w;
             }
         }
@@ -396,9 +404,6 @@ impl IView {
                 self.paddingtop = (self.content_height as f32 * percent).floor() as i32;
             }
             DIMEN::INT(w) => {
-                if w < 0 {
-                    panic!("Invalid Padding Top : {}", w)
-                }
                 self.paddingtop = w;
             }
         }
@@ -410,9 +415,6 @@ impl IView {
                 self.paddingright = (self.content_width as f32 * percent).floor() as i32;
             }
             DIMEN::INT(w) => {
-                if w < 0 {
-                    panic!("Invalid Padding Right : {}", w)
-                }
                 self.paddingright = w;
             }
         }
@@ -424,9 +426,6 @@ impl IView {
                 self.paddingbottom = (self.content_height as f32 * percent).floor() as i32;
             }
             DIMEN::INT(w) => {
-                if w < 0 {
-                    panic!("Invalid Padding Bottom : {}", w)
-                }
                 self.paddingbottom = w;
             }
         }
@@ -438,9 +437,6 @@ impl IView {
                 self.marginleft = (self.content_width as f32 * percent).floor() as i32;
             }
             DIMEN::INT(w) => {
-                if w < 0 {
-                    panic!("Invalid margin Left : {}", w)
-                }
                 self.marginleft = w;
             }
         }
@@ -452,9 +448,6 @@ impl IView {
                 self.margintop = (self.content_height as f32 * percent).floor() as i32;
             }
             DIMEN::INT(w) => {
-                if w < 0 {
-                    panic!("Invalid margin Top : {}", w)
-                }
                 self.margintop = w;
             }
         }
@@ -466,9 +459,6 @@ impl IView {
                 self.marginright = (self.content_width as f32 * percent).floor() as i32;
             }
             DIMEN::INT(w) => {
-                if w < 0 {
-                    panic!("Invalid margin Right : {}", w)
-                }
                 self.marginright = w;
             }
         }
@@ -480,9 +470,6 @@ impl IView {
                 self.marginbottom = (self.content_height as f32 * percent).floor() as i32;
             }
             DIMEN::INT(w) => {
-                if w < 0 {
-                    panic!("Invalid margin Bottom : {}", w)
-                }
                 self.marginbottom = w;
             }
         }
@@ -530,12 +517,12 @@ impl IView {
         match &self.content {
             IViewContent::CHIDREN(_) => {
                 // LOGLn!(
-                //     "{} {} {} {}",
+                //     "WIN: {} {} {} {}",
                 //     self.content_height + self.extray,
                 //     self.content_width + self.extrax,
                 //     self.height,
                 //     self.width
-                // ));
+                // );
                 self.basic_struct = Some(BASICSTRUCT::WIN(newwin(
                     self.content_height + self.extray,
                     self.content_width + self.extrax,
@@ -545,7 +532,7 @@ impl IView {
             }
             IViewContent::TEXT(_) => {
                 // create a pad
-                // LOG!("{txt} {} {} {} {}", self.content_height + self.extray, self.content_width + self.extrax, self.height, self.width);
+                // LOGLn!("{} {} {} {}", self.content_height + self.extray, self.content_width + self.extrax, self.height, self.width);
                 let win = newwin(
                     self.content_height + self.extray,
                     self.content_width + self.extrax,
@@ -637,6 +624,7 @@ impl IView {
 
                     self.content_width = self.content_width.max(0);
                 }
+                // LOGLn!("{} {}", self.content_width, parent_width);
             }
         }
 
@@ -726,7 +714,10 @@ impl IView {
         curr_render_box
     }
 
-    /**renders the children which have their:  min_z_index <= z_index <= max_z_index */
+    /** Walks through the children while maintaining their position inside this component
+     * if event is not None, then calls the handler else renders the children
+     * renders the children which have their:  min_z_index <= z_index <= max_z_index
+     **/
     fn render_children(
         &self,
         win: &WINDOW,
@@ -735,6 +726,7 @@ impl IView {
         last_cursor: &mut (i32, i32),
         max_z_index: i32,
         min_z_index: i32,
+        mut event_opt: Option<&mut EVENT>,
     ) -> RenderBox {
         let scroll_end_cursor = (
             self.scrolly + self.content_height + self.extray - (self.style.border * 2),
@@ -757,6 +749,17 @@ impl IView {
         let mut cheight_wrap = 0;
         let mut cwidth_wrap = 0;
 
+        let mut actualx = 0;
+        let mut actualy = 0;
+        match &event_opt {
+            Some(e) => {
+                actualx = e.clientx;
+                actualy = e.clienty;
+                // LOGLn!("EVENT: {}", icomponents.len());
+            },
+            None => {},
+        }
+
         // loop over the children
         icomponents.iter().for_each(|child_lk| {
             // calls the render function of child if it's bounds are within the view port of this window
@@ -770,11 +773,16 @@ impl IView {
             };
 
             if is_static {
+                // if event_opt.is_some() {
+                //     LOGLn!("{:p} {:?} {:?}", self, topleft, scroll_end_cursor);
+                // }
                 if topleft.0 >= scroll_end_cursor.0 || topleft.1 >= scroll_end_cursor.1 {
                     return;
                 }
 
                 let mut prevtopleft = topleft.clone();
+                let considerh;
+                let considerw; // height and width if this child is considered
                 let margin = {
                     let child = child_lk.lock().unwrap();
                     match direction {
@@ -792,6 +800,8 @@ impl IView {
                                 prevtopleft = topleft.clone();
                             }
                             topleft.0 += child.height;
+                            considerh = topleft.0 + child.margintop;
+                            considerw = topleft.1 + child.marginleft + child.width;
                         }
                         FLEXDIRECTION::HORIZONTAL => {
                             cheight_wrap = max(
@@ -807,6 +817,8 @@ impl IView {
                                 prevtopleft = topleft.clone();
                             }
                             topleft.1 += child.width;
+                            considerh = topleft.0 + child.height + child.margintop;
+                            considerw = topleft.1 + child.marginleft;
                         }
                     }
                     topleft.0 += child.margintop;
@@ -825,39 +837,76 @@ impl IView {
                     return;
                 }
 
-                if !(topleft.0 < self.scrolly || topleft.1 < self.scrollx) {
+                if !(considerh + self.style.border < self.scrolly
+                    || considerw + self.style.border < self.scrollx)
+                {
                     // if visible is set true then its scrollx and scrolly will already be 0
 
                     prevtopleft.0 += margin.0 + margin.4;
                     prevtopleft.1 += margin.2 + margin.5;
 
                     // either within the limits or is not static
-                    let (mut render_box, child_win) = child_lk.clone().lock().unwrap().__render__();
-
+                    let (mut render_box, child_win) = {
+                        let mut child = child_lk.lock().unwrap();
+                        if event_opt.is_some() {
+                            let render_box = RenderBox {
+                                topleftx: 0,
+                                toplefty: 0,
+                                bottomrightx: child.width - 1,
+                                bottomrighty: child.height - 1,
+                            };
+                            (render_box, 0 as WINDOW)
+                        } else {
+                            child.__render__()
+                        }
+                    };
+                    
                     // update the render box
                     let mut curr_box =
                         self.corrected_render_box(&mut render_box, &prevtopleft, &last_cursor);
 
                     curr_box.add_to_all(self.style.border);
 
-                    // LOGLn!("{:p} {:?} {:?} ", self, render_box, curr_box);
+                    // LOGLn!(
+                    //     "{:p} {:?} {:?} {:?}",
+                    //     self,
+                    //     render_box,
+                    //     curr_box,
+                    //     last_cursor
+                    // );
 
                     // need to consider the flex direction
                     // place the child at current top and left position
-                    copywin(
-                        child_win,
-                        *win,
-                        render_box.toplefty,
-                        render_box.topleftx,
-                        curr_box.toplefty,
-                        curr_box.topleftx,
-                        curr_box.bottomrighty,
-                        curr_box.bottomrightx,
-                        0,
-                    );
+                    if let Some(event) = &mut event_opt {
+                        // LOGLn!("{:?} {:?}", event, curr_box);
+                        // now check whether this box fells under the event constraints
+                        if curr_box.is_inside((event.clienty, event.clientx)) {
+                            event.clientx -= curr_box.topleftx - self.style.border;
+                            event.clienty -= curr_box.toplefty - self.style.border;
+                            let mut child = child_lk.lock().unwrap();
+                            if matches!(child.style.overflow, OVERFLOWBEHAVIOUR::SCROLL) {
+                                DOCUMENT.lock().unwrap().set_active(child_lk.clone());
+                            }
+                            child.__handle_mouse_event__(event);
+                            // now call child's event_handler
+                            event.clientx = actualx;
+                            event.clienty = actualy;
+                        }
+                    } else {
+                        copywin(
+                            child_win,
+                            *win,
+                            render_box.toplefty,
+                            render_box.topleftx,
+                            curr_box.toplefty,
+                            curr_box.topleftx,
+                            curr_box.bottomrighty,
+                            curr_box.bottomrightx,
+                            0,
+                        );
 
-                    child_lk.lock().unwrap().destroy_basic_struct();
-
+                        child_lk.lock().unwrap().destroy_basic_struct();
+                    }
                     curr_render_box.update(&curr_box);
                 }
                 match direction {
@@ -875,6 +924,19 @@ impl IView {
             } else {
                 let (margin, (mut render_box, child_win)) = {
                     let mut child = child_lk.lock().unwrap();
+                    let res = {
+                        if event_opt.is_some() {
+                            let render_box = RenderBox {
+                                topleftx: 0,
+                                toplefty: 0,
+                                bottomrightx: child.width - 1,
+                                bottomrighty: child.height - 1,
+                            };
+                            (render_box, 0 as WINDOW)
+                        } else {
+                            child.__render__()
+                        }
+                    };
                     (
                         (
                             child.margintop,
@@ -884,7 +946,7 @@ impl IView {
                             child.top,
                             child.left,
                         ),
-                        child.__render__(),
+                        res,
                     )
                 };
 
@@ -895,19 +957,31 @@ impl IView {
                     &last_cursor_with_border,
                 );
 
-                copywin(
-                    child_win,
-                    *win,
-                    render_box.toplefty,
-                    render_box.topleftx,
-                    curr_box.toplefty,
-                    curr_box.topleftx,
-                    curr_box.bottomrighty,
-                    curr_box.bottomrightx,
-                    0,
-                );
+                if let Some(event) = &mut event_opt {
+                    // now check whether this box fells under the event constraints
+                    if curr_box.is_inside((event.clienty, event.clientx)) {
+                        let mut child = child_lk.lock().unwrap();
+                        if matches!(child.style.overflow, OVERFLOWBEHAVIOUR::SCROLL) {
+                            DOCUMENT.lock().unwrap().set_active(child_lk.clone());
+                        }
+                        // now call child's event_handler
+                        child.__handle_mouse_event__(event);
+                    }
+                } else {
+                    copywin(
+                        child_win,
+                        *win,
+                        render_box.toplefty,
+                        render_box.topleftx,
+                        curr_box.toplefty,
+                        curr_box.topleftx,
+                        curr_box.bottomrighty,
+                        curr_box.bottomrightx,
+                        0,
+                    );
 
-                child_lk.lock().unwrap().destroy_basic_struct();
+                    child_lk.lock().unwrap().destroy_basic_struct();
+                }
                 curr_render_box.update(&curr_box);
             }
         });
@@ -978,6 +1052,7 @@ impl IView {
                     &mut last_cursor,
                     -1,
                     MIN,
+                    None
                 ));
 
                 if self.style.render {
@@ -999,6 +1074,7 @@ impl IView {
                     &mut last_cursor,
                     0,
                     0,
+                    None
                 ));
             }
             IViewContent::TEXT(txt) => {
@@ -1044,10 +1120,10 @@ impl IView {
                         *win,
                         self.scrolly,
                         self.scrollx,
-                        topleft.0,
-                        topleft.1,
-                        last_cursor.0 - self.paddingbottom,
-                        last_cursor.1 - self.paddingright,
+                        topleft.0 + self.style.border,
+                        topleft.1 + self.style.border,
+                        last_cursor.0 - self.paddingbottom + self.style.border,
+                        last_cursor.1 - self.paddingright + self.style.border,
                         0,
                     );
 
@@ -1161,191 +1237,19 @@ impl IView {
 
         last_cursor.0 = last_cursor.0.max(0);
         last_cursor.1 = last_cursor.1.max(0);
-
-        let mut last_cursor_with_border = last_cursor.clone();
-        last_cursor_with_border.0 += self.style.border * 2;
-        last_cursor_with_border.1 += self.style.border * 2;
-
-        let (actualx, actualy) = (event.clientx, event.clienty);
-
-        let direction = &self.style.flex_direction;
+        let win: &WINDOW = &(0 as WINDOW);
 
         match &self.content {
             IViewContent::CHIDREN(icomponents) => {
-                let scroll_end_cursor = (
-                    self.scrolly + self.content_height + self.extray - (self.style.border * 2),
-                    self.scrollx + self.content_width + self.extrax - (self.style.border * 2),
+                self.render_children(
+                    win,
+                    icomponents,
+                    &mut topleft,
+                    &mut last_cursor,
+                    MAX,
+                    MIN,
+                    Some(event)
                 );
-
-                let mut cheight_wrap = 0;
-                let mut cwidth_wrap = 0;
-
-                // loop over the children
-                icomponents.iter().for_each(|child_lk| {
-                    // calls the render function of child if it's bounds are within the view port of this window
-                    // gets the width covered by the child
-                    if {
-                        let child = child_lk.lock().unwrap();
-                        matches!(child.style.position, POSITION::STATIC)
-                    } {
-                        if topleft.0 >= scroll_end_cursor.0 || topleft.1 >= scroll_end_cursor.1 {
-                            return;
-                        }
-
-                        let mut prevtopleft = topleft.clone();
-
-                        let (margin, mut render_box) = {
-                            let child = child_lk.lock().unwrap();
-                            match direction {
-                                FLEXDIRECTION::VERTICAL => {
-                                    cwidth_wrap = max(
-                                        cwidth_wrap,
-                                        child.width + child.marginleft + child.marginright,
-                                    );
-                                    if self.flex_wrap_on
-                                        && topleft.0
-                                            + child.height
-                                            + child.marginbottom
-                                            + child.margintop
-                                            >= scroll_end_cursor.0
-                                    {
-                                        topleft.0 = self.paddingtop;
-                                        topleft.1 += cwidth_wrap;
-                                        prevtopleft = topleft.clone();
-                                    }
-                                    topleft.0 += child.height;
-                                }
-                                FLEXDIRECTION::HORIZONTAL => {
-                                    cheight_wrap = max(
-                                        cheight_wrap,
-                                        child.height + child.marginbottom + child.margintop,
-                                    );
-                                    if self.flex_wrap_on
-                                        && topleft.1
-                                            + child.width
-                                            + child.marginleft
-                                            + child.marginright
-                                            >= scroll_end_cursor.1
-                                    {
-                                        topleft.1 = self.paddingleft;
-                                        topleft.0 += cheight_wrap;
-                                        prevtopleft = topleft.clone();
-                                    }
-                                    topleft.1 += child.width;
-                                }
-                            }
-                            topleft.0 += child.margintop;
-                            topleft.1 += child.marginleft;
-                            let render_box = RenderBox {
-                                topleftx: 0,
-                                toplefty: 0,
-                                bottomrightx: child.width - 1,
-                                bottomrighty: child.height - 1,
-                            };
-                            // LOG!("{:p} {:?} ",&*child, render_box);
-                            (
-                                (
-                                    child.margintop,
-                                    child.marginbottom,
-                                    child.marginleft,
-                                    child.marginright,
-                                    child.top,
-                                    child.left,
-                                ),
-                                render_box,
-                            )
-                        };
-
-                        if prevtopleft.0 >= scroll_end_cursor.0
-                            || prevtopleft.1 >= scroll_end_cursor.1
-                        {
-                            return;
-                        }
-
-                        if !(topleft.0 < self.scrolly || topleft.1 < self.scrollx) {
-                            // if visible is set true then its scrollx and scrolly will already be 0
-
-                            prevtopleft.0 += margin.0 + margin.4;
-                            prevtopleft.1 += margin.2 + margin.5;
-
-                            // update the render box
-                            let mut curr_box = self.corrected_render_box(
-                                &mut render_box,
-                                &prevtopleft,
-                                &last_cursor,
-                            );
-
-                            curr_box.add_to_all(self.style.border);
-
-                            // LOGLn!("{:?} {}", curr_box, self.style.border);
-
-                            // now check whether this box fells under the event constraints
-                            if curr_box.is_inside((event.clienty, event.clientx)) {
-                                event.clientx -= prevtopleft.0 - self.scrolly + self.style.border;
-                                event.clienty -= prevtopleft.1 - self.scrolly + self.style.border;
-                                let mut child = child_lk.lock().unwrap();
-                                if matches!(child.style.overflow, OVERFLOWBEHAVIOUR::SCROLL) {
-                                    DOCUMENT.lock().unwrap().set_active(child_lk.clone());
-                                }
-                                child.__handle_mouse_event__(event);
-                                // now call child's event_handler
-                                event.clientx = actualx;
-                                event.clienty = actualy;
-                            }
-                        }
-                        match direction {
-                            FLEXDIRECTION::VERTICAL => {
-                                topleft.0 += margin.1;
-                                topleft.1 -= margin.2; // since this was added but we are not going in this direction
-                                // hence remove the left margin
-                            }
-                            FLEXDIRECTION::HORIZONTAL => {
-                                topleft.1 += margin.3;
-                                topleft.0 -= margin.0; // since this was added but we are not going in this direction
-                                // hence remove the top margin
-                            }
-                        }
-                    } else {
-                        let (margin, mut render_box) = {
-                            let child = child_lk.lock().unwrap();
-
-                            let render_box = RenderBox {
-                                topleftx: 0,
-                                toplefty: 0,
-                                bottomrightx: child.width - 1,
-                                bottomrighty: child.height - 1,
-                            };
-                            // LOG!("{:p} {:?} ",&*child, render_box);
-                            (
-                                (
-                                    child.margintop,
-                                    child.marginbottom,
-                                    child.marginleft,
-                                    child.marginright,
-                                    child.top,
-                                    child.left,
-                                ),
-                                render_box,
-                            )
-                        };
-
-                        // update the render box
-                        let curr_box = self.corrected_render_box(
-                            &mut render_box,
-                            &(self.scrolly + margin.4, self.scrollx + margin.5), // current scroll and the top and left, scroll will be substracted out inside function
-                            &last_cursor_with_border,
-                        );
-                        // LOGLn!("{:?}", curr_box);
-
-                        if curr_box.is_inside((event.clienty, event.clientx)) {
-                            let mut child = child_lk.lock().unwrap();
-                            if matches!(child.style.overflow, OVERFLOWBEHAVIOUR::SCROLL) {
-                                DOCUMENT.lock().unwrap().set_active(child_lk.clone());
-                            }
-                            child.__handle_mouse_event__(event);
-                        }
-                    }
-                });
             }
             IViewContent::TEXT(_) => {}
         }

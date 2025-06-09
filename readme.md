@@ -204,16 +204,18 @@ NOTE: Dimension -> Height/Width
 
 ##### Placing Child:
 
-- Parent will keep `top`, `left` pointer to know which child should be rendered. The `cursorx` and `cursory` will specify to the actual location on parent's screen. Child render box will be clipped according to the scroll view, if visibility is set to SCROLL or HIDDEN.
+- Parent will keep `top`, `left` pointer to know which child should be rendered. The `cursorx` and `cursory` will specify to the actual location on parent's screen. Child render box will be clipped according to the scroll view, if visibility is set to SCROLL or HIDDEN. 
+- All the static elements are placed inside the parent in space that exclude parent's border(if present). 
 
 ##### Box-sizing:
 
 1. Content-box:
 
-Not big issue, because the content height for child will be same the padding will be added to top of it.
+- Content size is same as given.
 
 2. Border-box:
 
+- Content Dimension : Given dimension is substracted with padding and border(if on)
 When padding is already known. Everything is good because we can calculate the padding and substract it from parent's dimension to calculate the content-dimension.
 
 However, if padding depends on parent's dimension, and parent dimension depends on child's (`FITCONTENT`) then, it is sure that child's will not depend on parent's because of circular dependency.Hence, in given senario, child's dimension does not depend on the parent's no matter whatever we provide in the child's **init**() . Hence we can get the parent's dimension and then calculate the padding afterwards.
@@ -248,6 +250,7 @@ Mouse Events supports both bubbling and capture.
 child will create its basic struct and parent will destroy it after copying
 While rendering we will correct the child's box as per (0,0) to (height + padding, width + padding).
 then while rendering we will render it from (y + border, x + border)
+
 
 #### Coloring
 
