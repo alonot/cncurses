@@ -395,14 +395,14 @@ impl IView {
                     }
                 }
                 // if self.content_height == 3 && self.content_width == 19 {
-                LOGLn!(
-                    "L: {:p} {} {} {} {}",
-                    self,
-                    self.content_height,
-                    self.content_width,
-                    cheight,
-                    cwidth
-                );
+                // LOGLn!(
+                //     "L: {:p} {} {} {} {}",
+                //     self,
+                //     self.content_height,
+                //     self.content_width,
+                //     cheight,
+                //     cwidth
+                // );
                 // }
             }
             IViewContent::TEXT(txt) => {
@@ -822,7 +822,7 @@ impl IView {
             };
 
             if is_static {
-                // if event_opt.is_some() {
+                // if self.flex_wrap_on {
                 //     LOGLn!("{:p} {:?} {:?}", self, topleft, scroll_end_cursor);
                 // }
                 if topleft.0 >= scroll_end_cursor.0 || topleft.1 >= scroll_end_cursor.1 {
@@ -834,19 +834,24 @@ impl IView {
                 let considerw; // height and width if this child is considered
                 let margin = {
                     let child = child_lk.lock().unwrap();
+                    let considered_height = child.height + child.marginbottom + child.margintop;
+                    let considered_width = child.width + child.marginleft + child.marginright;
                     match direction {
                         FLEXDIRECTION::VERTICAL => {
                             cwidth_wrap = max(
                                 cwidth_wrap,
-                                child.width + child.marginleft + child.marginright,
+                                considered_width,
                             );
                             if self.flex_wrap_on
-                                && topleft.0 + child.height + child.marginbottom + child.margintop
+                                && topleft.0 + considered_height
                                     >= scroll_end_cursor.0
                             {
+                                let did_this_child_cross = topleft.0 + considered_height > scroll_end_cursor.0;
                                 topleft.0 = self.paddingtop;
                                 topleft.1 += cwidth_wrap;
-                                prevtopleft = topleft.clone();
+                                if did_this_child_cross {
+                                    prevtopleft = topleft.clone();
+                                }
                             }
                             topleft.0 += child.height;
                             considerh = topleft.0 + child.margintop;
@@ -855,15 +860,18 @@ impl IView {
                         FLEXDIRECTION::HORIZONTAL => {
                             cheight_wrap = max(
                                 cheight_wrap,
-                                child.height + child.marginbottom + child.margintop,
+                                considered_height,
                             );
                             if self.flex_wrap_on
-                                && topleft.1 + child.width + child.marginleft + child.marginright
+                                && topleft.1 + considered_width
                                     >= scroll_end_cursor.1
                             {
+                                let did_this_child_cross = topleft.1 + considered_width > scroll_end_cursor.1;
                                 topleft.1 = self.paddingleft;
                                 topleft.0 += cheight_wrap;
-                                prevtopleft = topleft.clone();
+                                if did_this_child_cross {
+                                    prevtopleft = topleft.clone();
+                                }
                             }
                             topleft.1 += child.width;
                             considerh = topleft.0 + child.height + child.margintop;

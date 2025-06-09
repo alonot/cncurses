@@ -11,19 +11,14 @@ TODO:
 use dyn_clone::clone;
 use interfaces::{Component, Fiber, IViewContent, Stateful};
 use ncurses::{
-    ALL_MOUSE_EVENTS, BUTTON1_PRESSED, BUTTON2_PRESSED, COLOR_PAIRS, KEY_BTAB, KEY_CATAB, KEY_CTAB,
-    KEY_DOWN, KEY_LEFT, KEY_MOUSE, KEY_RESIZE, KEY_RIGHT, KEY_STAB, KEY_UP, MEVENT, OK, cbreak,
-    curs_set, endwin, getch, getmaxyx, getmouse, has_colors, initscr, keypad, mmask_t,
-    mouseinterval, mousemask, nodelay, noecho, refresh, start_color, stdscr, use_default_colors,
-    wrefresh,
+    cbreak, curs_set, endwin, getch, getmaxyx, getmouse, has_colors, initscr, keypad, mmask_t, mouseinterval, mousemask, nodelay, noecho, refresh, start_color, stdscr, use_default_colors, wrefresh, ALL_MOUSE_EVENTS, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON_SHIFT, COLOR_PAIRS, KEY_DOWN, KEY_LEFT, KEY_MOUSE, KEY_RESIZE, KEY_RIGHT, KEY_UP, MEVENT, OK
 };
 use nmodels::iview::IView;
 use std::{
     any::TypeId,
     collections::HashMap,
-    fmt::{Debug, Error},
+    fmt::Debug,
     i32,
-    mem::take,
     panic,
     sync::{Arc, LazyLock, Mutex},
 };
@@ -31,7 +26,7 @@ use std::{
 use crate::interfaces::{BASICSTRUCT, EVENT};
 use crate::styles::DIMEN;
 use crate::styles::STYLE;
-use crate::{interfaces::Document, nmodels::iview, styles::Style};
+use crate::{interfaces::Document};
 
 pub mod components;
 pub mod interfaces;
@@ -444,7 +439,7 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> R
                                 fiber.component = new_node.clone();
                             }
 
-                            check_for_change(child_fiber_lk.clone(), base_lk.clone());
+                            check_for_change(child_fiber_lk.clone(), base_lk.clone())?;
                             // adds this new fiber as child
                             new_children.push(child_fiber_lk.clone());
 
@@ -536,7 +531,7 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> R
                     child.component = new_node.clone();
                 }
 
-                check_for_change(child_lk.clone(), parent);
+                check_for_change(child_lk.clone(), parent)?;
             }
 
             let child_lk = fiber.children[0].clone();
@@ -551,10 +546,6 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> R
         let mut fiber = fiber_lk.lock().unwrap();
 
         if let Some(prev_iview) = &fiber.iview {
-            let id = {
-                let mut iv = iview.lock().unwrap();
-                iv.id
-            };
             if !Arc::as_ptr(prev_iview).eq(&Arc::as_ptr(&iview)) {
                 let mut document = DOCUMENT.lock().unwrap();
                 if document.is_active(prev_iview) {
@@ -760,7 +751,7 @@ fn handle_keyboard_event(ch: i32) -> Result<bool, String> {
                     let mut document = DOCUMENT.lock().unwrap();
                     document.advance_tab()
                 };
-                handle_focus_change(prev_iview, new_iview);
+                handle_focus_change(prev_iview, new_iview)?;
             }
             KEY_UP | KEY_DOWN | KEY_RIGHT | KEY_LEFT => {
                 // scroll on current active element
@@ -812,13 +803,15 @@ fn handle_events(root: Arc<Mutex<IView>>) -> Result<bool, String> {
                     DOCUMENT.lock().unwrap().clear_active();
                 }
 
-                root.lock().unwrap().__handle_mouse_event__(&mut event);
+                root.lock().unwrap().__handle_mouse_event__(&mut event)?;
             }
         }
         val => {
-            // call the keyboard handler
-            if handle_keyboard_event(val)? {
-                return Ok(true);
+            if val != -1 {
+                // call the keyboard handler
+                if handle_keyboard_event(val)? {
+                    return Ok(true);
+                }
             }
         }
     }
