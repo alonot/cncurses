@@ -40,11 +40,21 @@ impl Button {
         };
         btn.onclick(onclick, false)
     }
-    pub fn new<T: FnMut(&mut EVENT) +'static>(key: Option<String>,child: Arc<Mutex<dyn Component>>, style: CSSStyle,  onclick: T) -> Button {
+    pub fn new<T: FnMut(&mut EVENT) +'static>(child: Arc<Mutex<dyn Component>>, style: CSSStyle,  onclick: T) -> Button {
         let style_obj = style.create_style();
         
         let btn = Button {
-            key: key,
+            key: None,
+            child: child,
+            style: style_obj
+        };
+        btn.onclick(onclick, false)
+    }
+    pub fn new_key<T: FnMut(&mut EVENT) +'static>(key: String,child: Arc<Mutex<dyn Component>>, style: CSSStyle,  onclick: T) -> Button {
+        let style_obj = style.create_style();
+        
+        let btn = Button {
+            key: Some(key),
             child: child,
             style: style_obj
         };

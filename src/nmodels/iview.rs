@@ -10,9 +10,9 @@ use std::{
 };
 
 use ncurses::{
-    BUTTON_SHIFT, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, COLOR_PAIR,
-    KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_UP, WINDOW, box_, copywin, delwin, mvwprintw, newpad,
-    newwin, ungetch, wattroff, wattron, wbkgd,
+    BUTTON_SHIFT, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, COLOR_BLACK,
+    COLOR_MAGENTA, COLOR_PAIR, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_UP, WINDOW, box_, copywin,
+    delwin, mvwprintw, newpad, newwin, ungetch, wattroff, wattron, wbkgd,
 };
 
 use crate::{
@@ -282,13 +282,13 @@ impl IView {
                         // if last child and flex_grow is on then make the correct dimension 100% and send the reduced parent dimension
                         let f_grow = child.style.flex_grow;
                         let to_reduce = if f_grow && !self.style.flex_wrap && i == total - 1 {
-                            LOGLn!(
-                                "GROW {} {} {} {}",
-                                parent_height,
-                                parent_width,
-                                prev.0,
-                                prev.1
-                            );
+                            // LOGLn!(
+                            //     "GROW {} {} {} {}",
+                            //     parent_height,
+                            //     parent_width,
+                            //     prev.0,
+                            //     prev.1
+                            // );
                             match direction {
                                 FLEXDIRECTION::VERTICAL => {
                                     child.style.height = DIMEN::PERCENT(1.);
@@ -720,6 +720,7 @@ impl IView {
         child_render_box: &mut RenderBox,
         top_left: &(i32, i32),
         last_cusor: &(i32, i32),
+        for_event: bool
     ) -> RenderBox {
         let mut curr_render_box = RenderBox {
             toplefty: child_render_box.toplefty + top_left.0 - self.scrolly,
@@ -727,6 +728,10 @@ impl IView {
             bottomrighty: child_render_box.bottomrighty + top_left.0 - self.scrolly,
             bottomrightx: child_render_box.bottomrightx + top_left.1 - self.scrollx,
         };
+
+        if for_event {
+            curr_render_box.add_to_all(self.style.border);
+        }
 
         if curr_render_box.toplefty < 0 {
             // means we need to cut some top portion from the child
@@ -799,11 +804,13 @@ impl IView {
         let mut cwidth_wrap = 0;
 
         let mut actualx = 0;
+        let mut is_event = false;
         let mut actualy = 0;
         match &event_opt {
             Some(e) => {
                 actualx = e.clientx;
                 actualy = e.clienty;
+                is_event = true;
                 // LOGLn!("EVENT: {}", icomponents.len());
             }
             None => {}
@@ -838,15 +845,12 @@ impl IView {
                     let considered_width = child.width + child.marginleft + child.marginright;
                     match direction {
                         FLEXDIRECTION::VERTICAL => {
-                            cwidth_wrap = max(
-                                cwidth_wrap,
-                                considered_width,
-                            );
+                            cwidth_wrap = max(cwidth_wrap, considered_width);
                             if self.flex_wrap_on
-                                && topleft.0 + considered_height
-                                    >= scroll_end_cursor.0
+                                && topleft.0 + considered_height >= scroll_end_cursor.0
                             {
-                                let did_this_child_cross = topleft.0 + considered_height > scroll_end_cursor.0;
+                                let did_this_child_cross =
+                                    topleft.0 + considered_height > scroll_end_cursor.0;
                                 topleft.0 = self.paddingtop;
                                 topleft.1 += cwidth_wrap;
                                 if did_this_child_cross {
@@ -858,15 +862,12 @@ impl IView {
                             considerw = topleft.1 + child.marginleft + child.width;
                         }
                         FLEXDIRECTION::HORIZONTAL => {
-                            cheight_wrap = max(
-                                cheight_wrap,
-                                considered_height,
-                            );
+                            cheight_wrap = max(cheight_wrap, considered_height);
                             if self.flex_wrap_on
-                                && topleft.1 + considered_width
-                                    >= scroll_end_cursor.1
+                                && topleft.1 + considered_width >= scroll_end_cursor.1
                             {
-                                let did_this_child_cross = topleft.1 + considered_width > scroll_end_cursor.1;
+                                let did_this_child_cross =
+                                    topleft.1 + considered_width > scroll_end_cursor.1;
                                 topleft.1 = self.paddingleft;
                                 topleft.0 += cheight_wrap;
                                 if did_this_child_cross {
@@ -919,10 +920,7 @@ impl IView {
                     };
 
                     // update the render box
-                    let mut curr_box =
-                        self.corrected_render_box(&mut render_box, &prevtopleft, &last_cursor);
-
-                    curr_box.add_to_all(self.style.border);
+                        
 
                     // LOGLn!(
                     //     "{:p} {:?} {:?} {:?}",
@@ -935,11 +933,16 @@ impl IView {
                     // need to consider the flex direction
                     // place the child at current top and left position
                     if let Some(event) = &mut event_opt {
-                        // LOGLn!("{:?} {:?}", event, curr_box);
+                        let curr_box =
+                            self.corrected_render_box(&mut render_box, &prevtopleft, &last_cursor_with_border, true);
+
+                        // if self.style.border_color == COLOR_BLACK || self.style.color == COLOR_MAGENTA {
+                        // LOGLn!("{:?} {:?} {:?} {:?} {}", render_box, prevtopleft, event, curr_box, self.style.border);
+                        // }
                         // now check whether this box fells under the event constraints
                         if curr_box.is_inside((event.clienty, event.clientx)) {
-                            event.clientx -= curr_box.topleftx - self.style.border;
-                            event.clienty -= curr_box.toplefty - self.style.border;
+                            event.clientx -= curr_box.topleftx;
+                            event.clienty -= curr_box.toplefty;
                             let mut child = child_lk.lock().unwrap();
                             if matches!(child.style.overflow, OVERFLOWBEHAVIOUR::SCROLL) {
                                 DOCUMENT.lock().unwrap().set_active(child_lk.clone());
@@ -950,6 +953,10 @@ impl IView {
                             event.clienty = actualy;
                         }
                     } else {
+                        let mut curr_box =
+                            self.corrected_render_box(&mut render_box, &prevtopleft, &last_cursor, false);
+
+                        curr_box.add_to_all(self.style.border);
                         copywin(
                             child_win,
                             *win,
@@ -963,8 +970,8 @@ impl IView {
                         );
 
                         child_lk.lock().unwrap().destroy_basic_struct();
+                        curr_render_box.update(&curr_box);
                     }
-                    curr_render_box.update(&curr_box);
                 }
                 match direction {
                     FLEXDIRECTION::VERTICAL => {
@@ -1012,6 +1019,7 @@ impl IView {
                     &mut render_box,
                     &(self.scrolly + margin.4, self.scrollx + margin.5), // current scroll and the top and left, scroll will be substracted out inside function
                     &last_cursor_with_border,
+                    is_event
                 );
 
                 if let Some(event) = &mut event_opt {
@@ -1309,7 +1317,9 @@ impl IView {
                     Some(event),
                 )?;
             }
-            IViewContent::TEXT(_) => {}
+            IViewContent::TEXT(t) => {
+                LOGLn!("{}", t);
+            }
         }
 
         Ok(())
