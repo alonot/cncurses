@@ -11,22 +11,21 @@ TODO:
 use dyn_clone::clone;
 use interfaces::{Component, Fiber, IViewContent, Stateful};
 use ncurses::{
-    cbreak, curs_set, endwin, getch, getmaxyx, getmouse, has_colors, initscr, keypad, mmask_t, mouseinterval, mousemask, nodelay, noecho, refresh, start_color, stdscr, use_default_colors, wrefresh, ALL_MOUSE_EVENTS, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON_SHIFT, COLOR_PAIRS, KEY_DOWN, KEY_LEFT, KEY_MOUSE, KEY_RESIZE, KEY_RIGHT, KEY_UP, MEVENT, OK
+    cbreak, curs_set, endwin, getch, getmaxyx, getmouse, has_colors, initscr, keypad, mmask_t, mouseinterval, mousemask, nodelay, noecho, refresh, start_color, stdscr, use_default_colors, wrefresh, ALL_MOUSE_EVENTS, BUTTON1_PRESSED, BUTTON2_PRESSED, COLOR_PAIRS, KEY_BTAB, KEY_DOWN, KEY_ENTER, KEY_LEFT, KEY_MOUSE, KEY_RESIZE, KEY_RIGHT, KEY_UP, MEVENT, OK
 };
 use nmodels::iview::IView;
 use std::{
     any::TypeId,
     collections::HashMap,
     fmt::Debug,
-    i32,
-    panic,
+    i32, panic,
     sync::{Arc, LazyLock, Mutex},
 };
 
+use crate::interfaces::Document;
 use crate::interfaces::{BASICSTRUCT, EVENT};
 use crate::styles::DIMEN;
 use crate::styles::STYLE;
-use crate::{interfaces::Document};
 
 pub mod components;
 pub mod interfaces;
@@ -104,7 +103,7 @@ fn initialize() {
 }
 
 fn _debug_iview(iview: &std::sync::MutexGuard<'_, IView>) {
-    println!(
+    LOGLn!(
         "IView_{}({}, ::{:p} {:?} {})",
         iview.id,
         iview.style.render,
@@ -117,9 +116,9 @@ fn _debug_iview(iview: &std::sync::MutexGuard<'_, IView>) {
 fn _debug_tree(node: Arc<Mutex<IView>>, tabs: i32) {
     let iview: std::sync::MutexGuard<'_, IView> = node.lock().unwrap();
     for _ in 0..tabs {
-        print!("\t");
+        LOG!("\t");
     }
-    print!("|-");
+    LOG!("|-");
     match &iview.content {
         interfaces::IViewContent::CHIDREN(items) => {
             _debug_iview(&iview);
@@ -128,7 +127,7 @@ fn _debug_tree(node: Arc<Mutex<IView>>, tabs: i32) {
             });
         }
         interfaces::IViewContent::TEXT(txt) => {
-            println!(
+            LOGLn!(
                 "IView_{}({}, {}, ::{:p})",
                 iview.id,
                 iview.style.render,
@@ -147,21 +146,23 @@ fn _debug_fiber(node: Arc<Mutex<Fiber>>) {
         inode_p
     };
     let fiber = node.lock().unwrap();
-    println!(
-        "Fiber({}, {},{:?}, ::{:p} {:?}):",
+    let i = inode.lock().unwrap();
+    LOGLn!(
+        "Fiber({}, {},{:?}, ::{:p} {} {:?}):",
         fiber.key,
         fiber.changed,
         get_typeid(fiber.component.clone()),
-        &*inode.lock().unwrap(),
+        &*i,
+        i.id,
         Arc::as_ptr(&node) // fiber.state.len()
     );
 }
 
 fn _debug_fiber_tree(node: Arc<Mutex<Fiber>>, tabs: i32) {
     for _ in 0..tabs {
-        print!("\t");
+        LOG!("\t");
     }
-    print!("|-");
+    LOG!("|-");
     _debug_fiber(node.clone());
 
     let fiber = node.lock().unwrap();
@@ -202,10 +203,13 @@ fn create_tree(
  *
  * **HAS** SIDE-EFFECTS
  */
-fn create_render_tree(node: Arc<Mutex<dyn Component>>) -> Result<Arc<Mutex<IView>>,String> {
+fn create_render_tree(node: Arc<Mutex<dyn Component>>) -> Result<Arc<Mutex<IView>>, String> {
     let parent = IView::new()
         .set_style(STYLE::HIEGHT(DIMEN::PERCENT(100.)))
         .set_style(STYLE::WIDTH(DIMEN::PERCENT(100.)))
+        .set_style(STYLE::BACKGROUNDCOLOR(-1))
+        .set_style(STYLE::TEXTCOLOR(-1))
+        .set_style(STYLE::BORDERCOLOR(-1))
         .build();
 
     let fiber = create_tree(node, parent.clone(), true)?;
@@ -234,7 +238,7 @@ fn call_n_create_with_fiber(
     fiber_lk: Arc<Mutex<Fiber>>,
     parent: Arc<Mutex<IView>>,
     changed: bool,
-) -> Result<Arc<Mutex<Fiber>>,String> {
+) -> Result<Arc<Mutex<Fiber>>, String> {
     let iview = if let Some(base_lk) = convert_to_icomponent(&node) {
         let mut base = base_lk.lock().unwrap();
         // we need to assign parent to this base
@@ -262,7 +266,7 @@ fn call_n_create_with_fiber(
 
                 Ok(iview)
             })
-            .collect::<Result<Vec<Arc<Mutex<IView>>>,String>>()?;
+            .collect::<Result<Vec<Arc<Mutex<IView>>>, String>>()?;
 
         let content = &mut base.content;
 
@@ -370,7 +374,10 @@ fn update_child(fiber_lk: Arc<Mutex<Fiber>>) {
  * This time it checks if fiber needs to be changed or not using key and type of Component
  * If yes the creates a new Fiber else returns the same
  */
-fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> Result<bool,String> {
+fn check_for_change(
+    fiber_lk: Arc<Mutex<Fiber>>,
+    parent: Arc<Mutex<IView>>,
+) -> Result<bool, String> {
     let mut changed;
 
     let component;
@@ -427,6 +434,7 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> R
                             // adds this new fiber as child
                             new_children.push(fiber);
 
+
                             iview
                         } else {
                             // code never reaches here if i >= len
@@ -453,7 +461,7 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> R
 
                         Ok(iview)
                     })
-                    .collect::<Result<Vec<Arc<Mutex<IView>>>,String>>()?;
+                    .collect::<Result<Vec<Arc<Mutex<IView>>>, String>>()?;
 
                 // LOGLn!(
                 //     "{:?} {} {:p}",
@@ -551,26 +559,12 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> R
                 if document.is_active(prev_iview) {
                     document.set_active(iview.clone());
                 }
-                let updated = if let Some(focus) = document.focused_element() {
-                    // LOGLn!("{} {} {}", prev_id, id, focus.lock().unwrap().id);
-                    if Arc::as_ptr(&focus).eq(&Arc::as_ptr(prev_iview)) {
-                        // if focused then update
-                        document.update_focused_iview(iview.clone(), iview.lock().unwrap().id);
-                        false
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                };
+                let _ = document.find_n_update(prev_iview.lock().unwrap().id, &iview);
 
-                if prev_iview.lock().unwrap().style.taborder >= 0 && !updated {
-                    REMOVEINDEX
+                REMOVEINDEX
                     .lock()
                     .unwrap()
-                    .push(prev_iview.lock().unwrap().id);
-                }
-
+                    .push(prev_iview.clone());
 
                 if !newly_created {
                     let mut iv = iview.lock().unwrap();
@@ -615,12 +609,12 @@ fn check_for_change(fiber_lk: Arc<Mutex<Fiber>>, parent: Arc<Mutex<IView>>) -> R
  * HAS SIDE_EFFECTS
  */
 fn diff_n_update(root: Arc<Mutex<IView>>) -> Result<bool, String> {
-    let fiber_lk = {
+    let (fiber_lk, prev_iview_lk) = {
         let document = DOCUMENT.lock().unwrap();
         let Some(currfib_lk) = document.curr_fiber.clone() else {
             panic!("DIFFTREE: No Fiber found")
         };
-        currfib_lk
+        (currfib_lk.clone(), currfib_lk.lock().unwrap().iview.clone())
     };
 
     let changed = check_for_change(fiber_lk.clone(), root.clone())?;
@@ -629,6 +623,15 @@ fn diff_n_update(root: Arc<Mutex<IView>>) -> Result<bool, String> {
         let Some(iview) = fiber_lk.lock().unwrap().iview.clone() else {
             panic!("DIFFTREE: No Iview")
         };
+
+        if let Some(prev_iview) = &prev_iview_lk {
+             if !Arc::as_ptr(prev_iview).eq(&Arc::as_ptr(&iview)) {
+                 REMOVEINDEX
+                     .lock()
+                     .unwrap()
+                     .push(prev_iview.clone());
+             }
+        }
 
         root.lock().unwrap().content = IViewContent::CHIDREN(vec![iview]);
     }
@@ -649,7 +652,7 @@ fn tree_refresh(root: Arc<Mutex<IView>>) -> Result<(i32, i32, bool), String> {
         document.clear_color_pairs();
         // document._clear_tab_order();
     };
-    let res = root.lock().unwrap().__init__(*y, *x)?;
+    let res = root.lock().unwrap().__init__(*y, *x, -1, -1, -1)?;
     if res.2 {
         {
             let mut document = DOCUMENT.lock().unwrap();
@@ -657,6 +660,7 @@ fn tree_refresh(root: Arc<Mutex<IView>>) -> Result<(i32, i32, bool), String> {
                 // remove this id and its children
                 document.remove_id(id);
             });
+            REMOVEINDEX.lock().unwrap().clear();
             document.create_tab_order();
         }
 
@@ -708,18 +712,19 @@ pub(crate) fn handle_focus_change(
     } {
         return Ok(());
     }
+    let mut e = EVENT::new(0);
     if let Some(iview_lk) = prev_iview {
         let mut iview = iview_lk.lock().unwrap();
         iview.focused = false;
         if let Some(onunfocus) = iview.style.onunfocus.clone() {
-            onunfocus.lock().unwrap()();
+            onunfocus.lock().unwrap()(&mut e);
         }
     }
     if let Some(iview_lk) = new_iview {
         let mut iview = iview_lk.lock().unwrap();
         iview.focused = true;
         if let Some(onfocus) = iview.style.onfocus.clone() {
-            onfocus.lock().unwrap()();
+            onfocus.lock().unwrap()(&mut e);
         }
         if matches!(iview.style.overflow, styles::OVERFLOWBEHAVIOUR::SCROLL) {
             DOCUMENT.lock().unwrap().set_active(iview_lk.clone());
@@ -748,8 +753,17 @@ fn handle_keyboard_event(ch: i32) -> Result<bool, String> {
         match ch {
             TAB => {
                 let (prev_iview, new_iview) = {
+                    // LOGLn!("{:?}",DOCUMENT.lock().unwrap().taborder.iter().map(|r| r.id).collect::<Vec<i32>>());
                     let mut document = DOCUMENT.lock().unwrap();
                     document.advance_tab()
+                };
+                handle_focus_change(prev_iview, new_iview)?;
+            },
+            KEY_BTAB => { /* Shift + Tab */
+                let (prev_iview, new_iview) = {
+                    // LOGLn!("{:?}",DOCUMENT.lock().unwrap().taborder.iter().map(|r| r.id).collect::<Vec<i32>>());
+                    let mut document = DOCUMENT.lock().unwrap();
+                    document.stepback_tab()
                 };
                 handle_focus_change(prev_iview, new_iview)?;
             }
@@ -818,9 +832,7 @@ fn handle_events(root: Arc<Mutex<IView>>) -> Result<bool, String> {
     return Ok(false);
 }
 
-
 fn run_app(root: Arc<Mutex<IView>>) -> Result<(), String> {
-
     loop {
         // if change, get the tree from the app.
         // diff the tree to get the changed components
@@ -830,7 +842,7 @@ fn run_app(root: Arc<Mutex<IView>>) -> Result<(), String> {
 
         // if changes, render the changed portion
         if changed {
-            // _debug_tree( root.clone(), 0);
+            // _debug_tree(root.clone(), 0);
             let _ = tree_refresh(root.clone())?;
             // {
             //     let Some(fiber) = DOCUMENT.lock().unwrap().curr_fiber.clone() else {
@@ -849,7 +861,7 @@ fn run_app(root: Arc<Mutex<IView>>) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) static REMOVEINDEX: Mutex<Vec<i32>> = Mutex::new(vec![]);
+pub(crate) static REMOVEINDEX: Mutex<Vec<Arc<Mutex<IView>>>> = Mutex::new(vec![]);
 
 /************  Public Functions  ********** */
 
@@ -870,7 +882,7 @@ pub static DOCUMENT: Mutex<Document> = Mutex::new(Document {
  * Takes a clonable value and stores its clone
  * on subsequent calls the value is cloned and then sent back to the user
  */
-pub fn use_state<T: Stateful + Debug>(init_val: T) -> (T, Arc<dyn Fn(T)>) {
+pub fn use_state<T: Stateful + Debug>(init_val: T) -> (T, Arc<dyn Fn(T) + Send + Sync>) {
     // extracting the Components Fiber
 
     let currfiber_lk = {
@@ -905,22 +917,24 @@ pub fn use_state<T: Stateful + Debug>(init_val: T) -> (T, Arc<dyn Fn(T)>) {
     let set_value = move |val: T| {
         // move to get ownership of `curr_hook` variable
 
+        // LOGLn!("FIBL {:?} {:?} {:?}", Arc::as_ptr(&currfiber_lk), get_typeid(currfiber_lk.lock().unwrap().component.clone()), val);
         {
             // debug_fiber(currfiber_lk.clone());
             let mut currfiber = currfiber_lk.lock().unwrap();
 
             if curr_hook == currfiber.state.len() {
+                // LOGLn!("LEN");
                 return;
             }
-
+            
             let box_value = &mut currfiber.state[curr_hook as usize];
             if val.eq(&**box_value) {
+                // LOGLn!("EQ");
                 return;
             }
             *box_value = Box::new(clone(&val));
             currfiber.changed = true; // to re render this section
         }
-        // LOGLn!("{:?}", Arc::as_ptr(&currfiber_lk));
     };
 
     return (clone(downcasted_val), Arc::new(set_value));
@@ -944,7 +958,7 @@ pub fn run(app: impl Component) {
     let root = create_render_tree(node).expect("Failed to create the tree");
 
     match run_app(root.clone()) {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => {
             endwin();
             _debug_tree(root, 0);
@@ -956,7 +970,7 @@ pub fn run(app: impl Component) {
                 _debug_fiber_tree(fiber.clone(), 0);
             }
             println!("{e}");
-        },
+        }
     }
 
     endwin();
@@ -977,7 +991,13 @@ mod test {
     use ncurses::{COLOR_MAGENTA, COLOR_RED, endwin};
 
     use crate::{
-        components::{text::Text, view::View}, initialize, interfaces::{Component, ComponentBuilder, Document}, run, styles::{CSSStyle, DIMEN, FLEXDIRECTION, OVERFLOWBEHAVIOUR, STYLE}, use_state, DOCUMENT
+        DOCUMENT,
+        components::{text::Text, view::View},
+        initialize,
+        interfaces::{Component, ComponentBuilder, Document},
+        run,
+        styles::{CSSStyle, DIMEN, FLEXDIRECTION, OVERFLOWBEHAVIOUR, STYLE},
+        use_state,
     };
 
     struct DemoApp1 {
@@ -1070,7 +1090,7 @@ mod test {
                     border_color: COLOR_RED,  // assuming COLOR_RED is an i16 constant
                     ..Default::default()
                 },
-            ).onfocus(move || {
+            ).onfocus(move |_e| {
                             LOGLn!("I was Called");
                             p1(10);
                     })

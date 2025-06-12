@@ -10,11 +10,15 @@ use ncurses::{MENU, MEVENT, PANEL, WINDOW, init_pair, newwin};
 
 use crate::{_debug_iview, LOGLn, nmodels::iview::IView};
 
+pub trait StateEqual {
+    fn equal(&self, other: &Self) -> bool;
+}
+
 pub trait Stateful: DynClone + Any + Send {
     fn as_any(&self) -> &dyn Any;
     fn eq(&self, other: &dyn Stateful) -> bool;
 }
-impl<T: Clone + Any + Send + PartialEq> Stateful for T {
+impl<T: Clone + Any + Send + StateEqual> Stateful for T {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -22,7 +26,13 @@ impl<T: Clone + Any + Send + PartialEq> Stateful for T {
         other
             .as_any()
             .downcast_ref::<T>()
-            .map_or(false, |other| self == other)
+            .map_or(false, |other| self.equal(other))
+    }
+}
+
+impl<T: PartialEq> StateEqual for T {
+    fn equal(&self, other: &Self) -> bool {
+        other.eq(self)
     }
 }
 
@@ -67,7 +77,7 @@ pub trait Component: Any + Send {
     fn __base__(&self) -> Option<Arc<Mutex<IView>>> {
         None
     }
-    fn __key__(&self) -> Option<&String> {
+    fn __key__(&self) -> Option<String> {
         None
     }
 }
@@ -166,8 +176,8 @@ impl Fiber {
 }
 
 pub(crate) struct TabElement {
-    id: i32,
-    iview: Arc<Mutex<IView>>,
+    pub id: i32,
+    pub iview: Arc<Mutex<IView>>,
 }
 
 pub struct Document {
@@ -333,37 +343,44 @@ impl Document {
         self.next_tab_id = prev_next_id;
     }
 
-    pub(crate) fn remove_id(&mut self, id: &i32) {
-        if let Some(idx) = self.taborder.iter().position(|ielement| ielement.id == *id) {
-            // //// removing the children
-            let element = &self.taborder[idx];
-            let iview = &element.iview;
-            let mut to_remove = vec![];
-            match &iview.lock().unwrap().content {
-                IViewContent::CHIDREN(items) => {
-                    items.iter().for_each(|child| {
-                        to_remove.push( child.lock().unwrap().id );
-                    });
-                }
-                IViewContent::TEXT(_) => {
-                    // no children do nothing
-                }
+    pub(crate) fn remove_id(&mut self, iview: &Arc<Mutex<IView>>) {
+        match &iview.lock().unwrap().content {
+            IViewContent::CHIDREN(items) => {
+                items.iter().for_each(|child| {
+                    self.remove_id(&child);
+                });
             }
+            IViewContent::TEXT(_) => {
+                // no children do nothing
+            }
+        }
 
-            to_remove.iter().for_each(|id| {
-                self.remove_id(id);
-            });
+        let id = iview.lock().unwrap().id;
 
-            ///////
+        if let Some(idx) = self.taborder.iter().position(|ielement| ielement.id == id) {
             // LOGLn!("REMOVING {}",id);
             self.taborder.remove(idx);
-
-            if self.tabindex == idx {
+            if self.tabindex > idx {
+                self.tabindex -= 1;
+            } else if self.tabindex == idx {
                 // going out
                 self.tabindex = self.taborder.len();
             }
         }
     }
+    
+    pub(crate) fn find_n_update(&mut self, id: i32,iview: &Arc<Mutex<IView>>) -> bool {
+        if let Some(idx) = self.taborder.iter().position(|ielement| ielement.id == id) {
+            let element = &mut self.taborder[idx];
+            element.id = iview.lock().unwrap().id;
+            element.iview = iview.clone();
+            true
+        } else {
+            false
+        }
+    }
+
+
 
     /**returns the id of previous tab element
      * -1 if none.
@@ -383,8 +400,13 @@ impl Document {
     /**Locks the iview */
     pub(crate) fn advance_tab(&mut self) -> (Option<Arc<Mutex<IView>>>, Option<Arc<Mutex<IView>>>) {
         let prev_iview_lk = self.focused_element();
+        // LOGLn!(
+        //     "START: {} {} {}",
+        //     self.tabindex,
+        //     self.taborder.len(),
+        //     self.next_tab_id
+        // );
         if self.next_tab_id != -1 {
-            // LOGLn!("START: {} {} {}", self.tabindex, self.taborder.len(), self.next_tab_id);
             self.focus()
         } else {
             self.tabindex += 1;
@@ -395,6 +417,23 @@ impl Document {
             // LOGLn!("{} {}", self.tabindex, self.taborder.len());
             (prev_iview_lk, self.focused_element())
         }
+    }
+    /**Locks the iview */
+    pub(crate) fn stepback_tab(&mut self) -> (Option<Arc<Mutex<IView>>>, Option<Arc<Mutex<IView>>>) {
+        let prev_iview_lk = self.focused_element();
+        // LOGLn!(
+        //     "START: {} {} {}",
+        //     self.tabindex,
+        //     self.taborder.len(),
+        //     self.next_tab_id
+        // );
+        self.tabindex -= 1;
+        self.next_tab_id = -1;
+        if self.tabindex > self.taborder.len() {
+            self.tabindex = self.taborder.len();
+        }
+        // LOGLn!("{} {}", self.tabindex, self.taborder.len());
+        (prev_iview_lk, self.focused_element())
     }
 
     /** Change the focus to given current next_tab_id if available

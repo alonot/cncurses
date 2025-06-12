@@ -4,10 +4,12 @@ use std::{
 };
 
 use ncurses::{
-    BUTTON1_PRESSED, BUTTON3_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, endwin,
+    endwin, BUTTON1_PRESSED, BUTTON3_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, KEY_ENTER
 };
 
-use crate::interfaces::EVENT;
+use crate::{interfaces::EVENT, LOGLn};
+
+pub const TRANSPARENT:i16 = -2;
 
 pub struct CSSStyle<'a> {
     pub padding: &'a str,
@@ -40,12 +42,12 @@ impl<'a> Default for CSSStyle<'a> {
             flex_direction: Default::default(),
             position: Default::default(),
             boxsizing: Default::default(),
-            background_color: -1,
+            background_color: TRANSPARENT,
             color: -1,
             flex_wrap: false,
             flex: 0,
             taborder: -1,
-            border_color: -1,
+            border_color: TRANSPARENT,
             border: 0,
             top: Default::default(),
             left: Default::default(),
@@ -243,8 +245,9 @@ pub(crate) struct Style {
     pub(crate) onscroll_bubble: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + 'static>>>, // should be a clousure
     pub(crate) onclick_capture: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + 'static>>>, // should be a clousure
     pub(crate) onscroll_capture: Option<Arc<Mutex<dyn FnMut(&mut EVENT) + 'static>>>, // should be a clousure
-    pub(crate) onfocus: Option<Arc<Mutex<dyn FnMut() + 'static>>>,                  // should be a clousure
-    pub(crate) onunfocus: Option<Arc<Mutex<dyn FnMut() + 'static>>>,                // should be a clousure
+    pub(crate) onenter:Option<Arc<Mutex<dyn FnMut(&mut EVENT) + 'static>>>, // should be a clousure // should be a clousure
+    pub(crate) onfocus:Option<Arc<Mutex<dyn FnMut(&mut EVENT) + 'static>>>, // should be a clousure                  // should be a clousure
+    pub(crate) onunfocus:Option<Arc<Mutex<dyn FnMut(&mut EVENT) + 'static>>>, // should be a clousure                // should be a clousure
     pub(crate) render: bool,
     pub(crate) overflow: OVERFLOWBEHAVIOUR,
 }
@@ -253,6 +256,8 @@ unsafe impl Send for Style {}
 
 pub const FIT_CONTENT: i32 = -1;
 pub const MAX_CONTENT: i32 = -2;
+
+pub const NEWLINE:i32 = '\n' as i32;
 
 impl Style {
     pub(crate) fn default() -> Style {
@@ -285,6 +290,7 @@ impl Style {
             onscroll_bubble: None,
             onclick_capture: None,
             onscroll_capture: None,
+            onenter: None,
             onfocus: None,
             onunfocus: None,
             render: true,
@@ -338,7 +344,6 @@ impl Style {
      */
     pub(crate) fn handle_event(&self, event: &mut EVENT, capture: bool) {
         let mut fnc_opt: &Option<Arc<Mutex<dyn FnMut(&mut EVENT)>>> = &None;
-
         if let Some(mevent) = event.mevent {
             if mevent.bstate == BUTTON1_PRESSED as u32 || mevent.bstate == BUTTON3_PRESSED as u32 {
                 // left mouse clicked                           // right click
@@ -359,6 +364,9 @@ impl Style {
             }
         } else if !capture {
             match event.key {
+                NEWLINE => {
+                    fnc_opt = &self.onenter;
+                }
                 _ => {}
             }
         }

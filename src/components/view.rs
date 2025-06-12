@@ -20,8 +20,8 @@ impl Component for View {
     fn __base__(&self) -> Option<Arc<Mutex<IView>>> {
         Some(self.base_component.clone())
     }
-    fn __key__(&self) -> Option<&String> {
-        self.key.as_ref()
+    fn __key__(&self) -> Option<String> {
+        self.key.clone()
     }
 }
 
@@ -70,12 +70,16 @@ impl View {
         }
         self
     }
-    pub fn onfocus<T: FnMut() + 'static>(self, onfocus: T) -> Self {
+    pub fn onfocus<T: FnMut(&mut EVENT) + 'static>(self, onfocus: T) -> Self {
         self.base_component.lock().unwrap().style.onfocus = Some(Arc::new(Mutex::new(onfocus)));
         self
     }
-    pub fn onunfocus<S: FnMut() + 'static>(self, onunfocus: S) -> Self {
+    pub fn onunfocus<S: FnMut(&mut EVENT) + 'static>(self, onunfocus: S) -> Self {
         self.base_component.lock().unwrap().style.onunfocus = Some(Arc::new(Mutex::new(onunfocus)));
+        self
+    }
+    pub fn onenter<S: FnMut(&mut EVENT) + 'static>(self, onenter: S) -> Self {
+        self.base_component.lock().unwrap().style.onenter = Some(Arc::new(Mutex::new(onenter)));
         self
     }
     pub(crate) fn assign_style(&mut self, style_obj: Style) -> &mut Self {

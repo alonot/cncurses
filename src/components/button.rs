@@ -26,6 +26,9 @@ impl Component for Button {
         
         mview
     }
+    fn __key__(&self) -> Option<String> {
+        self.key.clone()
+    }
 }
 
 
@@ -33,32 +36,38 @@ impl Button {
     pub fn new_style_vec<T: FnMut(&mut EVENT) +'static>(key: Option<String>,child: Arc<Mutex<dyn Component>>, style: Vec<STYLE>,  onclick: T) -> Button {
         let style_obj = Style::from_style(style);
         
-        let btn = Button {
+        let mut btn = Button {
             key: key,
             child: child,
             style: style_obj
         };
-        btn.onclick(onclick, false)
+        btn = btn.onclick(onclick, false);
+        btn.style.onenter = btn.style.onclick_bubble.clone();
+        btn
     }
     pub fn new<T: FnMut(&mut EVENT) +'static>(child: Arc<Mutex<dyn Component>>, style: CSSStyle,  onclick: T) -> Button {
         let style_obj = style.create_style();
         
-        let btn = Button {
+        let mut btn = Button {
             key: None,
             child: child,
             style: style_obj
         };
-        btn.onclick(onclick, false)
+        btn = btn.onclick(onclick, false);
+        btn.style.onenter = btn.style.onclick_bubble.clone();
+        btn
     }
     pub fn new_key<T: FnMut(&mut EVENT) +'static>(key: String,child: Arc<Mutex<dyn Component>>, style: CSSStyle,  onclick: T) -> Button {
         let style_obj = style.create_style();
         
-        let btn = Button {
+        let mut btn = Button {
             key: Some(key),
             child: child,
             style: style_obj
         };
-        btn.onclick(onclick, false)
+        btn = btn.onclick(onclick, false);
+        btn.style.onenter = btn.style.onclick_bubble.clone();
+        btn
     }
     pub fn onclick<T: FnMut(&mut EVENT) + 'static>(mut self, onclick: T, capture:bool) -> Self {
         if capture {
@@ -76,12 +85,16 @@ impl Button {
         }
         self
     }
-    pub fn onfocus<T: FnMut() + 'static>(mut self, onfocus: T) -> Self {
+    pub fn onfocus<T: FnMut(&mut EVENT) + 'static>(mut self, onfocus: T) -> Self {
         self.style.onfocus = Some(Arc::new(Mutex::new(onfocus)));
         self
     }
-    pub fn onunfocus<S: FnMut() + 'static>(mut self, onunfocus: S) -> Self {
+    pub fn onunfocus<S: FnMut(&mut EVENT) + 'static>(mut self, onunfocus: S) -> Self {
         self.style.onunfocus = Some(Arc::new(Mutex::new(onunfocus)));
+        self
+    }
+    pub fn onenter<S: FnMut(&mut EVENT) + 'static>(mut self, onenter: S) -> Self {
+        self.style.onenter = Some(Arc::new(Mutex::new(onenter)));
         self
     }
 }

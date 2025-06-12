@@ -20,7 +20,7 @@ use crate::{
     interfaces::{BASICSTRUCT, Component, EVENT, IViewContent},
     styles::{
         BOXSIZING, CSSStyle, DIMEN, FIT_CONTENT, FLEXDIRECTION, OVERFLOWBEHAVIOUR, POSITION, STYLE,
-        Style,
+        Style, TRANSPARENT,
     },
 };
 
@@ -303,8 +303,13 @@ impl IView {
                             (0, 0)
                         };
 
-                        let (childh, childw, changed) = child
-                            .__init__(parent_height - to_reduce.0, parent_width - to_reduce.1)?;
+                        let (childh, childw, changed) = child.__init__(
+                            parent_height - to_reduce.0,
+                            parent_width - to_reduce.1,
+                            self.style.background_color,
+                            self.style.border_color,
+                            self.style.color,
+                        )?;
                         let res = if matches!(child.style.position, POSITION::RELATIVE) {
                             prev
                         } else {
@@ -601,6 +606,9 @@ impl IView {
         &mut self,
         parent_height: i32,
         parent_width: i32,
+        parent_bg: i16,
+        parent_bd: i16,
+        parent_color: i16,
     ) -> Result<(i32, i32, bool), String> {
         // we need to know height and width
 
@@ -675,6 +683,15 @@ impl IView {
                 }
                 // LOGLn!("{} {}", self.content_width, parent_width);
             }
+            if self.style.background_color == TRANSPARENT {
+                self.style.background_color = parent_bg;
+            }
+            if self.style.border_color == TRANSPARENT {
+                self.style.border_color = parent_bd;
+            }
+            if self.style.color == TRANSPARENT {
+                self.style.color = parent_color;
+            }
         }
 
         let (cheight, cwidth, changed) = self.calculate_child_dimensions(changed)?;
@@ -720,7 +737,7 @@ impl IView {
         child_render_box: &mut RenderBox,
         top_left: &(i32, i32),
         last_cusor: &(i32, i32),
-        for_event: bool
+        for_event: bool,
     ) -> RenderBox {
         let mut curr_render_box = RenderBox {
             toplefty: child_render_box.toplefty + top_left.0 - self.scrolly,
@@ -766,6 +783,18 @@ impl IView {
         curr_render_box.bottomrightx = curr_render_box.bottomrightx.max(0).min(last_cusor.1);
 
         curr_render_box
+    }
+
+
+    fn fill_remaining(self, win: &WINDOW,curr_box: &RenderBox, direction: &FLEXDIRECTION, bg_pair: i32) {
+        match direction {
+            FLEXDIRECTION::VERTICAL => {
+                
+            },
+            FLEXDIRECTION::HORIZONTAL => {
+
+            },
+        }
     }
 
     /** Walks through the children while maintaining their position inside this component
@@ -920,7 +949,6 @@ impl IView {
                     };
 
                     // update the render box
-                        
 
                     // LOGLn!(
                     //     "{:p} {:?} {:?} {:?}",
@@ -933,8 +961,12 @@ impl IView {
                     // need to consider the flex direction
                     // place the child at current top and left position
                     if let Some(event) = &mut event_opt {
-                        let curr_box =
-                            self.corrected_render_box(&mut render_box, &prevtopleft, &last_cursor_with_border, true);
+                        let curr_box = self.corrected_render_box(
+                            &mut render_box,
+                            &prevtopleft,
+                            &last_cursor_with_border,
+                            true,
+                        );
 
                         // if self.style.border_color == COLOR_BLACK || self.style.color == COLOR_MAGENTA {
                         // LOGLn!("{:?} {:?} {:?} {:?} {}", render_box, prevtopleft, event, curr_box, self.style.border);
@@ -953,8 +985,12 @@ impl IView {
                             event.clienty = actualy;
                         }
                     } else {
-                        let mut curr_box =
-                            self.corrected_render_box(&mut render_box, &prevtopleft, &last_cursor, false);
+                        let mut curr_box = self.corrected_render_box(
+                            &mut render_box,
+                            &prevtopleft,
+                            &last_cursor,
+                            false,
+                        );
 
                         curr_box.add_to_all(self.style.border);
                         copywin(
@@ -1019,7 +1055,7 @@ impl IView {
                     &mut render_box,
                     &(self.scrolly + margin.4, self.scrollx + margin.5), // current scroll and the top and left, scroll will be substracted out inside function
                     &last_cursor_with_border,
-                    is_event
+                    is_event,
                 );
 
                 if let Some(event) = &mut event_opt {
@@ -1158,8 +1194,6 @@ impl IView {
                             .get_color_pair(self.style.color, self.style.background_color)
                     };
 
-                    // LOGLn!("{} {}", txt, self.style.color));
-
                     wbkgd(*win, ' ' as u32 | COLOR_PAIR(border_color));
                     if self.style.border > 0 {
                         wattron(*win, COLOR_PAIR(border_color)); // setting border_pair
@@ -1171,7 +1205,7 @@ impl IView {
 
                     // then we need to render this window itself
                     // so background must be updated
-                    wbkgd(pad, ' ' as u32 | COLOR_PAIR(border_color));
+                    wbkgd(pad, ' ' as u32 | COLOR_PAIR(text_color));
 
                     wattron(pad, COLOR_PAIR(text_color)); // setting text_pair
                     // display the text at curootrrent top and left
@@ -1317,8 +1351,8 @@ impl IView {
                     Some(event),
                 )?;
             }
-            IViewContent::TEXT(t) => {
-                LOGLn!("{}", t);
+            IViewContent::TEXT(_) => {
+                // LOGLn!("{}", t);
             }
         }
 
