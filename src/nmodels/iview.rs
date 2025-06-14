@@ -10,9 +10,7 @@ use std::{
 };
 
 use ncurses::{
-    BUTTON_SHIFT, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, COLOR_BLACK,
-    COLOR_MAGENTA, COLOR_PAIR, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_UP, WINDOW, box_, copywin,
-    delwin, mvwprintw, newpad, newwin, ungetch, wattroff, wattron, wbkgd,
+    box_, copywin, delwin, mvwprintw, newpad, newwin, ungetch, wattroff, wattron, wbkgd, wprintw, BUTTON1_PRESSED, BUTTON2_PRESSED, BUTTON4_PRESSED, BUTTON5_PRESSED, BUTTON_SHIFT, COLOR_BLACK, COLOR_MAGENTA, COLOR_PAIR, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_UP, WINDOW
 };
 
 use crate::{
@@ -786,15 +784,41 @@ impl IView {
     }
 
 
-    fn fill_remaining(self, win: &WINDOW,curr_box: &RenderBox, direction: &FLEXDIRECTION, bg_pair: i32) {
+    fn fill_remaining(&self, win: &WINDOW,curr_box: &RenderBox, direction: &FLEXDIRECTION, bg_pair: i16) {
+        wattron(*win, COLOR_PAIR(bg_pair));
         match direction {
             FLEXDIRECTION::VERTICAL => {
-                
+                // then lets fill the left space in horizontal direction
+                // below this box
+                let hlen = self.height - (self.style.border * 2) - curr_box.bottomrighty;
+                let wleft = (self.width - (self.style.border * 2) - curr_box.topleftx).max(0) as usize;
+                for i in 1..hlen {
+                    let r = mvwprintw(*win, curr_box.bottomrighty + i,curr_box.topleftx , &" ".repeat(wleft));
+                }
+                // next to this box
+                let hleft = curr_box.bottomrighty - curr_box.toplefty + 1;
+                let wlen = (self.width - (self.style.border *  2) - curr_box.bottomrightx - 1).max(0) as usize;
+                for i in 0..hleft {
+                    let r = mvwprintw(*win, curr_box.toplefty + i, curr_box.bottomrightx + 1, &" ".repeat(wlen));
+                }
             },
             FLEXDIRECTION::HORIZONTAL => {
-
+                // then lets fill the left space in vertical direction
+                // below this box
+                let hlen = self.height - (self.style.border * 2) - curr_box.bottomrighty;
+                let wleft = (self.width - (self.style.border * 2) - curr_box.topleftx).max(0) as usize;
+                for i in 1..hlen {
+                    let r = mvwprintw(*win, curr_box.bottomrighty + i,curr_box.topleftx , &" ".repeat(wleft));
+                }
+                // next to this box
+                let hleft = curr_box.bottomrighty - curr_box.toplefty + 1;
+                let wlen = (self.width - (self.style.border *  2) - curr_box.bottomrightx - 1).max(0) as usize;
+                for i in 0..hleft {
+                    let r = mvwprintw(*win, curr_box.toplefty + i, curr_box.bottomrightx + 1, &" ".repeat(wlen));
+                }
             },
         }
+        wattroff(*win, COLOR_PAIR(bg_pair));
     }
 
     /** Walks through the children while maintaining their position inside this component
@@ -809,6 +833,7 @@ impl IView {
         last_cursor: &mut (i32, i32),
         max_z_index: i32,
         min_z_index: i32,
+        bg_pair: i16,
         mut event_opt: Option<&mut EVENT>,
     ) -> Result<RenderBox, String> {
         let scroll_end_cursor = (
@@ -993,6 +1018,11 @@ impl IView {
                         );
 
                         curr_box.add_to_all(self.style.border);
+
+                        LOGLn!("{:?}", curr_box);
+
+                        self.fill_remaining(win, &curr_box, direction, bg_pair);
+
                         copywin(
                             child_win,
                             *win,
@@ -1154,6 +1184,7 @@ impl IView {
                     &mut last_cursor,
                     -1,
                     MIN,
+                    border_color,
                     None,
                 )?);
 
@@ -1176,6 +1207,7 @@ impl IView {
                     &mut last_cursor,
                     0,
                     0,
+                    border_color,
                     None,
                 )?);
             }
@@ -1348,6 +1380,7 @@ impl IView {
                     &mut last_cursor,
                     MAX,
                     MIN,
+                    0,
                     Some(event),
                 )?;
             }
